@@ -51,6 +51,9 @@ describe("useAIObservabilityRouteChildren — online evaluations gate", () => {
     expect(namesWhere(false)).toEqual([
       "aiLLMInsights",
       "aiSessions",
+      "aiIssues",
+      "aiUsers",
+      "aiBudgets",
       "aiAgentGraph",
       "aiAgentBehavior",
       "aiPrompts",

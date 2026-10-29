@@ -18,11 +18,11 @@ export function buildJobMatchedTargetsTimeRange(nowMs = Date.now()) {
 }
 
 /** Double-quote a SQL identifier so unusual stream names remain valid. */
-function quoteIdent(name: string): string {
+export function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-function countExpression(targetScope: EvalTargetScope): string {
+export function countExpression(targetScope: EvalTargetScope): string {
   if (targetScope === "trace") {
     return `COUNT(DISTINCT ${quoteIdent("trace_id")})`;
   }

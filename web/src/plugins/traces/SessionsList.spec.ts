@@ -68,6 +68,12 @@ vi.mock("./composables/useSessions", () => ({
   })),
 }));
 
+// The Feedback column reads `_llm_scores`; no votes keeps it hidden here.
+vi.mock("./sessionFeedback", async () => {
+  const { ref } = await import("vue");
+  return { useSessionFeedback: () => ref({}) };
+});
+
 const mockGetStreams = vi.fn();
 vi.mock("@/composables/useStreams", () => ({
   default: vi.fn(() => ({
@@ -557,17 +563,32 @@ describe("SessionsList — sessions table", () => {
     expect(statusCell.classes().join(" ")).toContain("badge-success");
   });
 
-  it("status badge shows 'error' status for error sessions", async () => {
+  it("status badge shows 'failed' status for failed sessions", async () => {
     mockHasLoadedOnce.value = true;
-    mockSessions.value = [makeSession({ sessionId: "sess-err", status: "error", errorCount: 1 })];
+    mockSessions.value = [makeSession({ sessionId: "sess-err", status: "failed", errorCount: 1 })];
     mockTotal.value = 1;
 
     const wrapper = await mountComponent();
     const statusCell = wrapper.find('[data-test="sessions-list-status-sess-err"]');
     expect(statusCell.exists()).toBe(true);
-    // Migrated to <OTag type="sessionStatus">: registry label + error-soft variant.
-    expect(statusCell.text()).toContain("Error");
+    // <OTag type="sessionStatus">: registry label + error-soft variant.
+    expect(statusCell.text()).toContain("Failed");
     expect(statusCell.classes().join(" ")).toContain("badge-error");
+  });
+
+  // AIO-06: tool errors the agent got past do not fail the session.
+  it("shows Recovered with the tool error count", async () => {
+    mockHasLoadedOnce.value = true;
+    mockSessions.value = [
+      makeSession({ sessionId: "sess-rec", status: "recovered", errorCount: 7 }),
+    ];
+    mockTotal.value = 1;
+
+    const wrapper = await mountComponent();
+    expect(wrapper.find('[data-test="sessions-list-status-sess-rec"]').text()).toContain(
+      "Recovered",
+    );
+    expect(wrapper.text()).toContain("7 tool errors");
   });
 
   it("token column renders input → output (Σ total) format", async () => {

@@ -29,6 +29,9 @@ import type { I18nKey } from "@/types/i18n";
 const AIObservabilityShell = () => import("@/enterprise/views/AIObservability/Index.vue");
 const AILLMInsightsPage = () => import("@/enterprise/views/AIObservability/LLMInsightsPage.vue");
 const AISessionsPage = () => import("@/enterprise/views/AIObservability/SessionsPage.vue");
+const AIUsersPage = () => import("@/enterprise/views/AIObservability/UsersPage.vue");
+const AIIssuesPage = () => import("@/enterprise/views/AIObservability/IssuesPage.vue");
+const AIBudgetsPage = () => import("@/enterprise/views/AIObservability/BudgetsPage.vue");
 const AIAgentGraphPage = () => import("@/enterprise/views/AIObservability/AgentGraphPage.vue");
 const AIAgentBehaviorPage = () =>
   import("@/enterprise/views/AIObservability/AgentBehaviorPage.vue");
@@ -121,6 +124,39 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     icon: "forum",
     group: "Monitor",
     dataTest: "ai-secondary-nav-sessions",
+  },
+  {
+    key: "issues",
+    featureKey: null,
+    routeName: "aiIssues",
+    path: "issues",
+    component: AIIssuesPage,
+    labelKey: "aiObservability.nav.issues",
+    icon: "report-problem",
+    group: "Monitor",
+    dataTest: "ai-secondary-nav-issues",
+  },
+  {
+    key: "users",
+    featureKey: null,
+    routeName: "aiUsers",
+    path: "users",
+    component: AIUsersPage,
+    labelKey: "aiObservability.nav.users",
+    icon: "group",
+    group: "Monitor",
+    dataTest: "ai-secondary-nav-users",
+  },
+  {
+    key: "budgets",
+    featureKey: null,
+    routeName: "aiBudgets",
+    path: "budgets",
+    component: AIBudgetsPage,
+    labelKey: "aiObservability.nav.budgets",
+    icon: "account-balance",
+    group: "Monitor",
+    dataTest: "ai-secondary-nav-budgets",
   },
   {
     key: "agentGraph",

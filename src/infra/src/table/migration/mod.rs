@@ -248,6 +248,7 @@ mod m20261027_000001_alter_query_history;
 mod m20261028_000001_add_group_label_set_to_alert_states;
 mod m20261028_000001_add_llm_dataset_item_write_version;
 mod m20261029_000001_widen_alert_dedup_fingerprint;
+mod m20261029_000001_add_budget_to_online_eval_jobs;
 mod m20261030_000001_add_suppress_repeats_to_alerts;
 mod m20261030_000001_create_org_domain_ownership_table;
 mod m20261030_000002_create_org_domain_ownership_req_table;
@@ -806,6 +807,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_000002_create_workflow_http_trigger_credentials::Migration),
             Box::new(m20261026_000003_create_workflow_http_trigger_requests::Migration),
             Box::new(m20261102_000001_add_workflow_run_data_run_id_index::Migration),
+            Box::new(m20261029_000001_add_budget_to_online_eval_jobs::Migration),
         ]
     }
 }
@@ -909,6 +911,7 @@ mod tests {
         (133, "m20261103_000001_add_status_streaks_to_synthetics"),
         (134, "m20261028_000001_add_llm_dataset_item_write_version"),
         (135, "m20261102_000001_add_workflow_run_data_run_id_index"),
+        (136, "m20261029_000001_add_budget_to_online_eval_jobs"),
     ];
 
     // Two branches that each claim the next version merge cleanly, so a reused number must fail

@@ -54,8 +54,16 @@ export interface SessionApiHit {
   gen_ai_unpriced_models?: string[];
   /** Number of error spans across all traces in this session. */
   error_count: number;
+  /** Traces that failed by the AIO-06 rule; absent when the stream cannot tell. */
+  failed_trace_count?: number;
   user_ids?: string[];
   first_user_message?: string | null;
+  /** AIO-22: harness blocks hidden from the first message by the agent's patterns. */
+  harness_hidden?: number;
+  /** Set when the first message was only harness text: the tag that hid it. */
+  harness_only?: string;
+  /** Short title, when GenAI Agent Mapping turns titles on. */
+  session_title?: string;
 }
 
 export interface SessionApiResponse {

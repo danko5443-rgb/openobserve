@@ -51,7 +51,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     </template>
 
     <div class="bg-card-glass-bg flex h-full min-h-0 flex-col" data-test="ai-discovery-body">
+      <!-- Traces rank by trace signals first (AIO-30); Newest first is the scored list. -->
+      <div v-if="scope === 'trace'" class="flex items-center gap-2 px-2 pt-2">
+        <OToggleGroup
+          :model-value="problemFirst ? 'problem' : 'newest'"
+          data-test="ai-discovery-sort"
+          @update:model-value="(v) => (problemFirst = v === 'problem')"
+        >
+          <OToggleGroupItem value="problem" size="sm" data-test="ai-discovery-sort-problem">
+            {{ t("discoveryProblems.problemFirst") }}
+          </OToggleGroupItem>
+          <OToggleGroupItem value="newest" size="sm" data-test="ai-discovery-sort-newest">
+            {{ t("discoveryProblems.newestFirst") }}
+          </OToggleGroupItem>
+        </OToggleGroup>
+      </div>
+      <DiscoveryProblems
+        v-if="scope === 'trace' && problemFirst"
+        :start-time="timeRange.startTime"
+        :end-time="timeRange.endTime"
+        :scored-count="total"
+        @open="openProblem"
+        @show-scored="problemFirst = false"
+      />
       <OTable
+        v-else
         :key="scope"
         data-test="ai-discovery-table"
         :data="visibleItems"
@@ -194,7 +218,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </template>
 
         <template #cell-quality="{ row }">
-          <DiscoveryQualityCell :quality="row.quality" :issue-count="row.issueCount" />
+          <DiscoveryQualityCell
+            :quality="row.quality"
+            :issue-count="row.issueCount"
+            :not-helpful="row.notHelpful"
+            :feedback-comment="row.feedbackComment"
+          />
         </template>
 
         <template #cell-inQueue="{ row }">
@@ -243,11 +272,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </template>
       </OTable>
     </div>
+    <!-- Trace and span rows open in a drawer on this page (AIO-21), keeping
+         the agent, version and time range. -->
+    <AiTraceDrawer v-model:open="traceDrawerOpen" :trace="drawerTrace" />
   </AiPageShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 import { useStore } from "vuex";
 import { useRouter } from "vue-router";
@@ -276,6 +308,12 @@ import llmDiscoveryService, {
 import llmQueuesService, { type LlmQueue } from "@/services/llm-queues.service";
 import { formatTimeWithSuffix } from "@/utils/formatters";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
+import AiTraceDrawer from "@/plugins/traces/AiTraceDrawer.vue";
+// Loaded with the Traces tab: it pulls the one-click eval dialog along.
+const DiscoveryProblems = defineAsyncComponent(() => import("./DiscoveryProblems.vue"));
+import OToggleGroup from "@/lib/core/ToggleGroup/OToggleGroup.vue";
+import OToggleGroupItem from "@/lib/core/ToggleGroup/OToggleGroupItem.vue";
+import type { AiDrawerTrace } from "@/plugins/traces/AiTraceDrawer.types";
 
 defineOptions({ name: "AIDiscoveryPage" });
 
@@ -656,17 +694,33 @@ function openTarget(row: LlmDiscoveryItem) {
     return;
   }
   const traceId = row.scope === "trace" ? row.targetId : row.traceId;
-  if (traceId) {
-    router.push({
-      name: "traceDetails",
-      query: {
-        ...query,
-        trace_id: traceId,
-        // A span row lands on its parent trace with that span selected.
-        ...(row.scope === "span" ? { span_id: row.targetId } : {}),
-      },
-    });
+  if (traceId && row.sourceStream) {
+    drawerTrace.value = {
+      traceId,
+      stream: row.sourceStream,
+      startTime: row.refTimestamp - TRACE_WINDOW_US,
+      endTime: row.refTimestamp + TRACE_WINDOW_US,
+      // A span row opens its parent trace with that span selected.
+      spanId: row.scope === "span" ? row.targetId : undefined,
+    };
+    traceDrawerOpen.value = true;
+  } else if (traceId) {
+    router.push({ name: "traceDetails", query: { ...query, trace_id: traceId } });
   }
+}
+
+const traceDrawerOpen = ref(false);
+const drawerTrace = ref<AiDrawerTrace | null>(null);
+
+const problemFirst = ref(true);
+function openProblem(target: { traceId: string; ts: number; stream: string }) {
+  drawerTrace.value = {
+    traceId: target.traceId,
+    stream: target.stream,
+    startTime: target.ts - TRACE_WINDOW_US,
+    endTime: target.ts + TRACE_WINDOW_US,
+  };
+  traceDrawerOpen.value = true;
 }
 
 // ── Add to queue (row action and bulk share this path) ──

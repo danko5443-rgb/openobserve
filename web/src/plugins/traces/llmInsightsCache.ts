@@ -34,7 +34,7 @@
  * without limit — the oldest entry is evicted FIFO when full.
  */
 import { quantizeRange } from "@/composables/query/queryClient";
-import type { LLMKPI, LLMSparklineSeries } from "./composables/useLLMInsights";
+import type { LLMKPI, LLMSparklineSeries, LLMTraceOutcomes } from "./composables/useLLMInsights";
 
 const MAX_ENTRIES = 60;
 
@@ -42,6 +42,10 @@ const MAX_ENTRIES = 60;
 export interface KpiSnapshot {
   kpi: LLMKPI;
   sparklines: LLMSparklineSeries;
+  outcomes: LLMTraceOutcomes | null;
+  /** The window just before, for the tiles' deltas. */
+  prevKpi?: LLMKPI | null;
+  prevOutcomes?: LLMTraceOutcomes | null;
   lastRunAt: number | null;
 }
 

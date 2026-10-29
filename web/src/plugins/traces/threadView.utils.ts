@@ -113,7 +113,7 @@ export function hasLLMPayload(span: any): boolean {
  * Deliberately broader than `classify`'s `llm_turn` set — an `embeddings`
  * span is a real LLM call even though it carries no chat transcript.
  */
-const LLM_CALL_OPS = new Set(["chat", "text_completion", "generate_content", "embeddings"]);
+export const LLM_CALL_OPS = new Set(["chat", "text_completion", "generate_content", "embeddings"]);
 
 export function classify(span: any): SpanKind {
   const obs = getOp(span);
@@ -223,6 +223,9 @@ export function extractContent(content: unknown): string {
         if (typeof part === "string") return part;
         if (!isRecord(part)) return "";
         if (part.text) return String(part.text);
+        // The Thread view draws tool calls as cards (see toolCallParts), not as
+        // "Called name(...)" text inside the assistant bubble.
+        if (part.type === "tool_call" || part.type === "server_tool_call") return "";
 
         const genAiText = extractGenAiPartText(part);
         if (genAiText != null) return genAiText;
@@ -402,6 +405,63 @@ export function looksLikeAgentInjection(text: string): boolean {
 // Turn / trace-group construction
 // ---------------------------------------------------------------------------
 
+export interface ToolCallPart {
+  id: string;
+  name: string;
+  arguments: unknown;
+}
+
+/**
+ * The tool calls an LLM turn asked for, in order: semconv `tool_call` parts and
+ * OpenAI-style `tool_calls` entries of its output messages.
+ *
+ * @example toolCallParts('[{"role":"assistant","parts":[{"type":"tool_call","id":"c1","name":"grep","arguments":{"q":"x"}}]}]')
+ *   // [{ id: "c1", name: "grep", arguments: { q: "x" } }]
+ */
+export function toolCallParts(raw: unknown): ToolCallPart[] {
+  const parsed = decodeAnyValue(raw);
+  if (parsed == null) return [];
+  const messages = resolveMessageArray(parsed);
+  const out: ToolCallPart[] = [];
+  for (const m of messages.length ? messages : [parsed]) {
+    if (!isRecord(m)) continue;
+    const parts = Array.isArray(m.parts) ? m.parts : Array.isArray(m.content) ? m.content : [];
+    for (const p of parts) {
+      if (isRecord(p) && p.type === "tool_call") {
+        out.push({ id: String(p.id ?? ""), name: String(p.name ?? ""), arguments: p.arguments });
+      }
+    }
+    for (const c of Array.isArray(m.tool_calls) ? m.tool_calls : []) {
+      if (!isRecord(c)) continue;
+      const fn = isRecord(c.function) ? c.function : {};
+      out.push({ id: String(c.id ?? ""), name: String(fn.name ?? ""), arguments: fn.arguments });
+    }
+  }
+  return out;
+}
+
+/**
+ * A turn's tool calls (AIO-21): its execute_tool spans, plus a placeholder for
+ * each `tool_call` part no span carries by `gen_ai_tool_call_id`, so a call is
+ * shown even when the SDK records no tool span (it then has no duration).
+ */
+function withUnmatchedToolCalls(turnSpan: any, spans: any[]): any[] {
+  const ids = new Set(spans.map((t) => String(t.gen_ai_tool_call_id ?? "")).filter(Boolean));
+  // Spans without call ids cannot be matched to parts: trust the spans.
+  if (spans.length && !ids.size) return spans;
+  const extra = toolCallParts(getOutputRaw(turnSpan))
+    .filter((c) => !ids.has(c.id) && (c.id || !spans.length))
+    .map((c, i) => ({
+      span_id: `tool-call:${turnSpan.span_id}:${c.id || i}`,
+      gen_ai_tool_name: c.name,
+      gen_ai_tool_call_id: c.id,
+      gen_ai_tool_call_arguments: c.arguments,
+      start_time: turnSpan.end_time,
+      synthetic: true,
+    }));
+  return [...spans, ...extra];
+}
+
 /** Earliest start and latest end in ns, skipping missing or negative times; null without both. */
 export function spanTimeBounds(
   spans: ReadonlyArray<{ start_time?: unknown; end_time?: unknown }>,
@@ -535,7 +595,9 @@ export function buildTraceGroup(spans: any[]): TraceGroup | null {
 
     return {
       span: turnSpan,
-      toolCalls: attached.sort((a, b) => Number(a.start_time) - Number(b.start_time)),
+      toolCalls: withUnmatchedToolCalls(turnSpan, attached).sort(
+        (a, b) => Number(a.start_time) - Number(b.start_time),
+      ),
       assistant: messagesFromOutput(getOutputRaw(turnSpan)),
       followupUsers,
     };

@@ -72,6 +72,10 @@ vi.mock("./composables/useLLMInsights", () => ({
     streamsLoaded: mockStreamsLoaded,
     fetchAll: mockFetchAll,
     cancelAll: mockCancelAll,
+    // Trace outcomes (AIO-06) and the previous-window instance share these.
+    outcomes: { value: null },
+    outcomesLoading: { value: false },
+    fetchOutcomes: async () => {},
   }),
 }));
 
@@ -481,6 +485,7 @@ describe("LLMInsightsDashboard — filter mode toggle", () => {
       expect.any(Number),
       expect.any(Number),
       null,
+      "",
     );
   });
 });
@@ -500,6 +505,7 @@ describe("LLMInsightsDashboard — per-variant KPI cache", () => {
       expect.any(Number),
       expect.any(Number),
       expect.objectContaining({ version: "1.4.0" }),
+      "",
     );
   });
 });

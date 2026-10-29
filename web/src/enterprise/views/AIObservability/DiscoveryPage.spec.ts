@@ -28,6 +28,9 @@ const mockListQueues = vi.fn();
 const mockToast = vi.fn();
 const mockPush = vi.fn();
 
+vi.mock("./DiscoveryProblems.vue", () => ({
+  default: { name: "DiscoveryProblems", render: () => null },
+}));
 vi.mock("@/services/llm-discovery.service", () => ({
   default: {
     search: (...args: any[]) => mockSearch(...args),
@@ -151,10 +154,13 @@ function searchResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function mountPage() {
+// The Traces tab opens on "Problem first" (AIO-30, its own spec); these tests
+// cover the scored list, which is "Newest first".
+async function mountPage(problemFirst = false) {
   const wrapper = mount(DiscoveryPage, {
     global: { stubs: { OTabs: true, OTab: true, OEmptyState: true, OTag: true, OTimeCell: true } },
   });
+  (wrapper.vm as any).$.setupState.problemFirst = problemFirst;
   await flushPromises();
   return wrapper;
 }
@@ -169,6 +175,13 @@ beforeEach(() => {
 });
 
 describe("DiscoveryPage fetching", () => {
+  it("opens the Traces tab on Problem first, ranked by trace signals", async () => {
+    const wrapper = await mountPage(true);
+    // The ranked view is an async component with its own spec; here the page
+    // offers the sort and hides the scored list behind it.
+    expect(wrapper.find("[data-test='ai-discovery-sort']").exists()).toBe(true);
+    expect(wrapper.find(".o-table").exists()).toBe(false);
+  });
   it("loads the triage backlog for traces on mount, unfiltered by queue status", async () => {
     await mountPage();
 
@@ -417,23 +430,21 @@ describe("DiscoveryPage add to queue", () => {
 });
 
 describe("DiscoveryPage row drill-down", () => {
-  it("routes a trace row to the trace detail view", async () => {
+  // AIO-21: trace rows open in a drawer on this page, so the scope stays put.
+  it("opens a trace row in the trace drawer, around the row's time", async () => {
     const wrapper = await mountPage();
     const state = (wrapper.vm as any).$.setupState;
 
     state.openTarget(state.items[0]);
 
-    // stream + from/to are REQUIRED: the trace view reads them off the URL and
-    // renders "trace not found" without them.
-    expect(mockPush).toHaveBeenCalledWith({
-      name: "traceDetails",
-      query: {
-        org_identifier: "test-org",
-        stream: "default",
-        from: 1_700_000_000_000_000 - 3_600_000_000,
-        to: 1_700_000_000_000_000 + 3_600_000_000,
-        trace_id: "trace-1",
-      },
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(state.traceDrawerOpen).toBe(true);
+    expect(state.drawerTrace).toEqual({
+      traceId: "trace-1",
+      stream: "default",
+      startTime: 1_700_000_000_000_000 - 3_600_000_000,
+      endTime: 1_700_000_000_000_000 + 3_600_000_000,
+      spanId: undefined,
     });
   });
 
@@ -478,7 +489,7 @@ describe("DiscoveryPage row drill-down", () => {
     expect(mockPush.mock.calls[0][0].query).not.toHaveProperty("stream");
   });
 
-  it("routes a span row to its parent trace", async () => {
+  it("opens a span row on its parent trace", async () => {
     const wrapper = await mountPage();
     const state = (wrapper.vm as any).$.setupState;
 
@@ -491,17 +502,8 @@ describe("DiscoveryPage row drill-down", () => {
       sourceStream: "default",
     });
 
-    // A span lands on its parent trace with itself selected.
-    expect(mockPush).toHaveBeenCalledWith({
-      name: "traceDetails",
-      query: {
-        org_identifier: "test-org",
-        stream: "default",
-        from: 5_000_000_000 - 3_600_000_000,
-        to: 5_000_000_000 + 3_600_000_000,
-        trace_id: "trace-9",
-        span_id: "span-1",
-      },
-    });
+    // A span opens its parent trace in the drawer with itself selected.
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(state.drawerTrace).toMatchObject({ traceId: "trace-9", spanId: "span-1" });
   });
 });

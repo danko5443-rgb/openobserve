@@ -774,6 +774,76 @@ describe("TraceDetails", () => {
     });
   });
 
+  describe("Request timeline (AIO-37)", () => {
+    const lanesToggle = () => wrapper.find('[data-test="trace-details-lanes-toggle-btn"]');
+    const template = tracesMockData.tracesDetails.traceSpans.hits[0];
+    const S = 1_000_000_000;
+    const span = (id: string, parent: string, startS: number, endS: number, extra = {}) => ({
+      ...template,
+      span_id: id,
+      reference_parent_span_id: parent,
+      operation_name: id,
+      start_time: template.start_time + startS * S,
+      end_time: template.start_time + endS * S,
+      duration: ((endS - startS) * S) / 1000,
+      span_status: "UNSET",
+      ...extra,
+    });
+    // The design's support-bot answer: a tool call that waited on one Postgres query.
+    const supportBot = [
+      span("invoke_agent support-bot", "", 0, 12, { gen_ai_operation_name: "invoke_agent" }),
+      span("lookup", "invoke_agent support-bot", 1.5, 10.5, {
+        gen_ai_operation_name: "execute_tool",
+        gen_ai_tool_name: "lookup_order",
+      }),
+      span("SELECT orders", "lookup", 1.7, 10.3, {
+        db_system: "postgresql",
+        server_address: "orders-db",
+      }),
+    ];
+
+    async function mountSpans(spanListProp: unknown[]) {
+      wrapper.unmount();
+      wrapper = mount(TraceDetails, {
+        ...mountOptions,
+        props: {
+          mode: "embedded",
+          traceIdProp: "timeline-trace-id",
+          streamNameProp: "test-stream",
+          spanListProp,
+        },
+      });
+      await flushPromises();
+      wrapper.vm.activeTab = "waterfall";
+      await flushPromises();
+    }
+
+    it("names where a slow tool call's time went above the waterfall", async () => {
+      await mountSpans(supportBot);
+      expect(wrapper.find('[data-test="trace-details-time-headline"]').text()).toBe(
+        "lookup_order took 9.00s. 8.60s of it was one postgresql query, SELECT orders on orders-db.",
+      );
+    });
+
+    it("turns the lanes on for an LLM trace and shows them locked without a license", async () => {
+      await mountSpans(supportBot);
+      expect(lanesToggle().attributes("aria-checked")).toBe("true");
+      // The lanes component loads lazily.
+      await vi.waitFor(async () => {
+        await flushPromises();
+        expect(wrapper.find('[data-test="trace-lanes-locked"]').exists()).toBe(true);
+      });
+      expect(wrapper.find('[data-test="trace-details-tree"]').exists()).toBe(true);
+    });
+
+    it("keeps the lanes off and names nothing for a plain trace", async () => {
+      wrapper.vm.activeTab = "waterfall";
+      await flushPromises();
+      expect(lanesToggle().attributes("aria-checked")).toBe("false");
+      expect(wrapper.find('[data-test="trace-details-time-headline"]').exists()).toBe(false);
+    });
+  });
+
   describe("Trace Graph view toggle and service search", () => {
     const template = tracesMockData.tracesDetails.traceSpans.hits[0];
     const spans = [

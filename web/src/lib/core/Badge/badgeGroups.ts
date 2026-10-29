@@ -1824,13 +1824,14 @@ export const BADGE_GROUPS = {
     fallback: { variant: "default-soft" },
   },
 
-  // LLM session outcome (derived from error_count) — dot + soft colour.
+  // LLM session outcome (AIO-06: failed / recovered from tool errors / ok) — dot + soft colour.
   sessionStatus: {
     mode: "dot",
     shape: "pill",
     values: {
       ok: { variant: "success-soft", labelKey: "components.badge.sessionStatus.ok" },
-      error: { variant: "error-soft", labelKey: "components.badge.sessionStatus.error" },
+      recovered: { variant: "warning-soft", labelKey: "components.badge.sessionStatus.recovered" },
+      failed: { variant: "error-soft", labelKey: "components.badge.sessionStatus.failed" },
     },
     fallback: { variant: "default-soft" },
   },

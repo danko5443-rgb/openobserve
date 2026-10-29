@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useStore } from "vuex";
 import { raw, useI18nTyped } from "@/types/i18n";
@@ -89,6 +89,8 @@ const loading = ref(false);
 const lastUpdatedAt = ref<number | null>(null);
 const experimentDrafts = useEditorDraftIds("experiment");
 
+// `experiment` is the listed row with its flag flipped (the browser keeps its
+// summary), so the row keeps its scores while the pin moves.
 function onBaselineChanged(experiment: LlmExperiment, previousBaselineId: string | null) {
   experiments.value = experiments.value.map((row) => {
     if (row.id === experiment.id) return experiment;
@@ -96,6 +98,26 @@ function onBaselineChanged(experiment: LlmExperiment, previousBaselineId: string
     return row;
   });
 }
+
+// A running row's slot count moves without Refresh: while any row is live the
+// list re-reads itself quietly. A failed poll stops it until the next refresh.
+const LIVE_STATUSES = new Set(["pending", "running", "scoring"]);
+const LIVE_POLL_MS = 5_000;
+let livePoll: ReturnType<typeof setTimeout> | undefined;
+watch(experiments, (rows) => {
+  clearTimeout(livePoll);
+  if (!rows.some((row) => LIVE_STATUSES.has(row.status))) return;
+  livePoll = setTimeout(async () => {
+    const opts = experimentsListQuery(orgId.value);
+    try {
+      experiments.value = await queryClient.fetchQuery({ ...opts, staleTime: 0 });
+      lastUpdatedAt.value = queryClient.getQueryState(opts.queryKey)?.dataUpdatedAt ?? Date.now();
+    } catch {
+      // Refresh still reports the error; a background poll should not toast every 5 s.
+    }
+  }, LIVE_POLL_MS);
+});
+onBeforeUnmount(() => clearTimeout(livePoll));
 
 // `force` reaches the server: the mount may serve the cached list, but Refresh and post-write reloads must not.
 async function refresh(force = false) {

@@ -157,7 +157,17 @@ export function buildLLMPanelSchema(opts: {
           }
         : panel.color
           ? { color: { mode: "fixed", fixedColor: [panel.color], seriesBy: "last" } }
-          : {}),
+          : panel.seriesColors?.length
+            ? {
+                color: {
+                  mode: "palette-classic-by-series",
+                  colorBySeries: panel.seriesColors.map((c) => ({
+                    value: t(c.labelKey),
+                    color: c.color,
+                  })),
+                },
+              }
+            : {}),
     },
     queryType: "sql",
     queries: [

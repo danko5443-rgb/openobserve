@@ -9,6 +9,8 @@
 const mockFetchSession = vi.fn();
 const mockFetchTurnDetail = vi.fn();
 const mockFetchSessionSpans = vi.fn();
+const mockFetchSessionAgent = vi.fn();
+const mockMappingGet = vi.fn();
 const mockRouterPush = vi.fn();
 const mockRouterBack = vi.fn();
 
@@ -27,7 +29,12 @@ vi.mock("./composables/useSessions", () => ({
     fetchSession: mockFetchSession,
     fetchTurnDetail: mockFetchTurnDetail,
     fetchSessionSpans: mockFetchSessionSpans,
+    fetchSessionAgent: mockFetchSessionAgent,
   })),
+}));
+
+vi.mock("@/services/gen-ai-agent-mapping.service", () => ({
+  default: { get: (...args: unknown[]) => mockMappingGet(...args) },
 }));
 
 vi.mock("./TurnPreviewCard.vue", () => ({
@@ -268,6 +275,8 @@ beforeEach(() => {
     model: "gpt-4",
   });
   mockFetchSessionSpans.mockResolvedValue([makeSpan()]);
+  mockFetchSessionAgent.mockResolvedValue(null);
+  mockMappingGet.mockRejectedValue(new Error("not enterprise"));
 });
 
 // ---------------------------------------------------------------------------
@@ -556,6 +565,33 @@ describe("SessionDetails — turn rows", () => {
     const wrapper = await mountComponent();
     const row = wrapper.find(turnRowSelector());
     expect(row.text()).toContain("1");
+  });
+
+  it("hides the agent's harness text in the turn title and body (AIO-22)", async () => {
+    const message = "<system-reminder>context</system-reminder>\nFix the login bug";
+    mockMappingGet.mockResolvedValue({
+      harness_patterns: [{ agent: "omp", patterns: ["tag system-reminder"] }],
+    });
+    mockFetchSessionAgent.mockResolvedValue("omp");
+    mockFetchSession.mockResolvedValue({
+      detail: makeDetail(),
+      traces: [makeTrace({ turnUserMessage: message })],
+    });
+    mockFetchSessionSpans.mockResolvedValue([
+      makeSpan({ gen_ai_input_messages: JSON.stringify([{ role: "user", content: message }]) }),
+    ]);
+
+    const wrapper = await mountComponent();
+    const header = wrapper.find(turnHeaderSelector());
+    expect(header.text()).toContain("Fix the login bug");
+    expect(header.text()).not.toContain("system-reminder");
+
+    await header.trigger("click");
+    await flushPromises();
+    const body = wrapper.find(turnBodySelector());
+    expect(body.text()).toContain("Fix the login bug");
+    expect(body.text()).not.toContain("context");
+    expect(wrapper.find('[data-test="session-turn-harness-trace-xyz"]').exists()).toBe(true);
   });
 
   it("uses the full trace ID in the row test hook", async () => {

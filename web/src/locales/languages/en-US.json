@@ -12802,6 +12802,10 @@
         "rumfunnel": {
           "label": "Alert me",
           "toast": "Imported from Product Analytics: \"{sourceLabel}\""
+        },
+        "ai": {
+          "label": "Create alert",
+          "toast": "Imported from AI Observability: \"{sourceLabel}\""
         }
       },
       "warnings": {
@@ -12829,6 +12833,7 @@
         "dbmServerVantage": "This measures what the database server itself reported about locks, not how long your application waited. Do not compare it with query latency alerts.",
         "dbmLockSampling": "Lock activity is sampled on an interval, so contention that started and cleared between two samples was never recorded. A quiet alert is not proof there was no blocking.",
         "dbmNoInstance": "No single database instance was identified, so this alert watches every instance of this engine.",
+        "aiAllAgents": "No agent was in scope, so this alert watches every agent on the stream, one row per agent.",
         "rumFunnelSnapshot": "This alert keeps a copy of the funnel's SQL. Later edits to the funnel or its named events do not change it.",
         "rumFunnelSteps": "A funnel needs at least two steps before it can alert on conversion.",
         "textFilterDropped": "Your search filter was not carried over because this stream has no full-text search (FTS) fields. Add it to the alert query if you need it.",
@@ -16108,7 +16113,9 @@
       "openSpanDetails": "Open span details",
       "arguments": "Arguments",
       "result": "Result",
-      "empty": "(empty)"
+      "empty": "(empty)",
+      "recovered": "Recovered by a later call",
+      "showJson": "Show all {n} lines"
     },
     "threadView": {
       "historicalIcon": "↶",
@@ -17097,6 +17104,9 @@
       "sessions": "Sessions",
       "agentGraph": "Agent Graph",
       "agentBehavior": "Agent Behavior",
+      "issues": "Issues",
+      "users": "Users",
+      "budgets": "Budgets",
       "discovery": "Discovery",
       "queues": "Queues",
       "datasets": "Datasets",
@@ -18136,7 +18146,7 @@
       },
       "errorsOverTime": {
         "title": "Errors over time",
-        "subtitle": "error count"
+        "subtitle": "traces by outcome"
       },
       "spansByModel": {
         "title": "Spans by model",
@@ -22327,7 +22337,8 @@
       },
       "sessionStatus": {
         "ok": "Ok",
-        "error": "Error"
+        "recovered": "Recovered",
+        "failed": "Failed"
       },
       "crossLinkSource": {
         "stream": "Stream",
@@ -28845,6 +28856,632 @@
       "notSent": "Not sent",
       "reminded": "Reminder sent to {count} person | Reminder sent to {count} people",
       "remindFailed": "The reminders could not be sent."
+    }
+  },
+  "readableSessions": {
+    "title": "Title",
+    "hidden": "{n} harness block hidden | {n} harness blocks hidden",
+    "onlyHarness": "Only harness text: {tag}",
+    "show": "Show",
+    "settings": {
+      "title": "Harness text by agent",
+      "help": "Text matching these patterns is hidden in session titles, first messages and turn previews. Stored spans are not changed.",
+      "addAgent": "Add agent",
+      "agent": "Agent",
+      "patterns": "Wrapper patterns, one per line",
+      "patternsHelp": "tag <name> hides <name>…</name> blocks; regex <expression> hides matches.",
+      "codingAgentDefaults": "Coding-agent defaults",
+      "test": "Test on recent sessions",
+      "remove": "Remove agent",
+      "matches": "{matched} of {total} recent sessions match",
+      "before": "Before",
+      "after": "After",
+      "testFailed": "Could not read recent sessions",
+      "titleSource": "Session title",
+      "titleSourceHelp": "A Title column on Sessions. The first request costs nothing.",
+      "titleOff": "Off",
+      "titleFirstRequest": "First request, trimmed"
+    }
+  },
+  "traceIssues": {
+    "tab": "Issues",
+    "count": "{n} issue | {n} issues",
+    "rules": {
+      "repeated_tool_calls": "Repeated tool calls",
+      "repeated_failing_tool_calls": "Repeated failing tool calls"
+    },
+    "severity": {
+      "repeated_tool_calls": "High",
+      "repeated_failing_tool_calls": "Medium"
+    },
+    "repeated": "{tool} ran {calls} times in this trace. The rule fires at {threshold}. {errors} of the calls ended in an error.",
+    "failing": "{tool} failed {errors} times in this trace. The rule fires at {threshold} failed calls.",
+    "evidence": "Evidence",
+    "call": "call {n}",
+    "ruleSource": "Rule from the ai-agents pack, at its default threshold",
+    "openIssues": "Open in Issues"
+  },
+  "llmAttribution": {
+    "settings": {
+      "title": "Cost attribution fields",
+      "help": "The span contract for cost by user, feature and tenant. OpenObserve reads the standard attribute first. When a span does not have it, the first fallback field the span or its resource carries is copied to the standard attribute at ingest.",
+      "field": "Field",
+      "standard": "Standard (checked first)",
+      "fallbacks": "Fallback fields, comma separated",
+      "fallbacksFor": "Fallback fields for {dim}",
+      "coverage": "Traces with a value, past 24 hours",
+      "note": "Fallbacks apply to spans ingested after you save. Spans already stored keep their attributes."
+    },
+    "mapAttributes": "Map attributes",
+    "title": "Cost by",
+    "summary": "{total} · {share}% of spend has a {dim}",
+    "dims": {
+      "tenant": "Tenant",
+      "feature": "Feature",
+      "user": "User"
+    },
+    "value": "Value",
+    "cost": "Cost",
+    "share": "Share",
+    "tokens": "Tokens",
+    "traces": "Traces",
+    "more": "{n} more",
+    "unattributed": "Unattributed",
+    "empty": "No LLM spend in this window",
+    "loadFailed": "Could not load the cost breakdown",
+    "unset": "No span in this stream sets {attribute} yet. Set it on the root span and spend is attributed per value:",
+    "users": {
+      "title": "Users",
+      "subtitle": "See who uses your agents and what they cost",
+      "stream": "Stream",
+      "agent": "Agent",
+      "search": "Search by user id",
+      "empty": "No spans with user.id in this window",
+      "sessions": "Sessions",
+      "sessionsCol": "Sessions",
+      "lastSeen": "Last seen",
+      "count": "{n} users · sorted by cost"
+    }
+  },
+  "discoveryProblems": {
+    "problemFirst": "Problem first",
+    "newestFirst": "Newest first",
+    "all": "All",
+    "tiers": {
+      "failed": "Failed",
+      "loop": "Tool loop",
+      "cost": "Cost",
+      "slow": "Slow",
+      "unpriced": "Unpriced",
+      "score": "Score"
+    },
+    "checks": {
+      "failed": "Terminal failures",
+      "loop": "Tool loops",
+      "cost": "Cost above 5× median",
+      "slow": "Latency above 5× median",
+      "unpriced": "Unpriced spend",
+      "score": "Unhealthy scores: no eval job scores this agent"
+    },
+    "noScores": "No eval scores for {agent} in this window, so rows are ranked by trace signals only. Scores join the ranking once a job runs.",
+    "emptyTitle": "No problems in {n} traces",
+    "emptyBody": "Every check ran. Nothing crossed its limit.",
+    "noneInTier": "No trace in this tier",
+    "loadFailed": "Could not rank the traces",
+    "time": "Timestamp",
+    "trace": "Trace",
+    "input": "Input",
+    "why": "Why listed",
+    "why_failedTurn": "Last LLM turn failed: {message}",
+    "why_failedRoot": "Root span error: {message}",
+    "why_loop": "{tool} called {calls} times in one trace",
+    "why_cost": "{cost}, {factor}× the agent median of {median}",
+    "why_slow": "{duration}, {factor}× the agent median of {median}",
+    "why_unpriced": "{tokens} tokens on {model}, counted as $0"
+  },
+  "aiIssues": {
+    "title": "Issues",
+    "subtitle": "AI failures, rule hits, score drops and cost spikes, grouped by cause",
+    "states": { "open": "Open", "muted": "Muted", "closed": "Closed" },
+    "sources": {
+      "rule": "Rule",
+      "failure": "Failure",
+      "cost_spike": "Cost spike",
+      "unpriced": "Unpriced",
+      "score_drop": "Score drop"
+    },
+    "titles": {
+      "loop": "{agent} calls {tool} {calls} times in one trace",
+      "failingTool": "{agent} keeps failing calls to {tool}",
+      "failure": "{agent} fails: {error}",
+      "costSpike": "{agent} costs {factor}× more per trace",
+      "unpriced": "{model} has no price",
+      "scoreDrop": "{config} is unhealthy for {share}% of scores"
+    },
+    "empty": {
+      "open": "No open issues in this window",
+      "muted": "No muted issues",
+      "closed": "No closed issues"
+    },
+    "issue": "Issue",
+    "spend": "LLM spend",
+    "users": "Users",
+    "firstSeen": "First seen",
+    "lastSeen": "Last seen",
+    "since": "since {at}",
+    "rootCause": "Root cause",
+    "explain": "Explain",
+    "explainWithAi": "Explain with O2 AI",
+    "explainHelp": "O2 AI investigates this issue's traces and reaches past the AI spans into logs, metrics, Kubernetes and deploys, and cites its evidence.",
+    "addPrice": "Add a price",
+    "evidence": "Affected traces",
+    "worst": "worst",
+    "isRuleRight": "Is this rule right?",
+    "falseRate": "Not a problem: {dismissed} of {closed} decided rule issues",
+    "firesAt": "Fires at calls per trace",
+    "preview": "Preview",
+    "previewCount": "At {threshold}, {n} traces in this window would match",
+    "saveThreshold": "Save to the alert",
+    "thresholdSaved": "The rule now fires at {threshold}",
+    "ruleNotInstalled": "Install the ai-agents alert pack first (Catch loops and failures)",
+    "turnIntoTest": "Turn this into a test",
+    "addToDataset": "Add the worst trace to a dataset",
+    "runExperiment": "Run an experiment",
+    "markFixed": "Mark fixed",
+    "notAProblem": "Not a problem",
+    "mute": "Mute for {days} days",
+    "decided": {
+      "fixed": "Marked fixed. It reopens if it happens again.",
+      "dismissed": "Closed as not a problem",
+      "muted": "Muted for 7 days"
+    },
+    "decideFailed": "Could not save the decision: {reason}",
+    "card": {
+      "title": "Issues",
+      "hint": "Rule hits on your traces",
+      "viewAll": "View all in Issues",
+      "none": "No rule hits in this window"
+    }
+  },
+  "aiBudgets": {
+    "title": "Budgets",
+    "subtitle": "Spend limits per agent, feature and user, with a signal your gateway can enforce",
+    "new": "New budget",
+    "create": "Create budget",
+    "budget": "Budget",
+    "spentLimit": "Spent / limit",
+    "state": "State",
+    "states": { "under": "Under", "warning": "Warning", "over": "Over | {n} over | {n} over" },
+    "empty": "No budgets yet. A budget warns at 80% and signals at 100%.",
+    "signalNote": "The 100% alert is the budget signal: point it at your gateway's webhook (LiteLLM, Portkey). OpenObserve never blocks a call.",
+    "unpriced": "{n} calls have no price this month. They are not counted in any budget.",
+    "name": "Name",
+    "limits": "What it limits",
+    "limit": "Limit (USD)",
+    "period": "Period",
+    "periods": { "day": "Day", "month": "Month", "hour": "Hour" },
+    "scopes": {
+      "agent": "Agent",
+      "feature": "Feature",
+      "user": "Each user",
+      "model": "Model",
+      "session": "Session burn rate"
+    },
+    "eachScope": "{scope} · per {period}",
+    "valueScope": "{scope} = {value} · per {period}",
+    "spentOf": "{spent} / {limit} · {pct}%",
+    "spentEach": "{limit} each · {over} of {keys} over · largest {largest}",
+    "warnAt": "At 80%, notify",
+    "overAt": "At 100%, budget signal",
+    "signalHelp": "A webhook destination your gateway acts on to stop the calls.",
+    "folderDescription": "Budget alerts (80% and 100%)",
+    "created": "Created budget {name}: two alerts in AI budgets"
+  },
+  "releaseWatch": {
+    "title": "Release watch · {agent} {version}",
+    "regressions": "{n} regression | {n} regressions",
+    "clean": "No regression",
+    "firstSeen": "First seen {at}",
+    "compared": "Compared with {prev} over each version's first 3 hours: {before} and {after} sessions.",
+    "metrics": {
+      "failureRate": "Failure rate",
+      "costPerSession": "Cost / session",
+      "p95": "P95 latency"
+    },
+    "was": "was {value} · {verdict}",
+    "verdicts": {
+      "regressed": "regressed",
+      "improved": "improved",
+      "nochange": "no change",
+      "indicative": "indicative"
+    },
+    "introduced": "Introduced: {cls} in {n} traces. Not seen in {prev}.",
+    "openCompare": "Open compare",
+    "mute": "Mute this version"
+  },
+  "aiAlertPack": {
+    "open": "Catch loops and failures",
+    "title": "Install AI agent alerts",
+    "subtitle": "Alert pack ai-agents · reads the gen_ai spans of the stream you pick",
+    "stream": "Trace stream",
+    "destination": "Destination",
+    "noDestination": "No destination (add one later)",
+    "reliabilityRules": "Reliability rules · one row per trace, agent and tool",
+    "templates": "AI templates · one row per agent, model or config",
+    "runsNow": "Runs now",
+    "install": "Install {n} alert | Install {n} alerts",
+    "summary": "Adds {n} alerts to the folder {folder}. The other {waiting} wait for their data and are not installed yet.",
+    "folderDescription": "Alerts from the ai-agents pack",
+    "installedAll": "Installed {n} alerts in {folder}",
+    "installedSome": "Installed {n} alerts. Not installed: {failed}",
+    "waits": {
+      "trustabl": "Waits for trustabl.* fields",
+      "binding": "Waits for a binding event",
+      "scores": "Waits for scores",
+      "perConfig": "Set up per config on Quality"
+    },
+    "rules": {
+      "repeatedToolCalls": {
+        "title": "Repeated tool calls",
+        "when": "Same tool called 10+ times in one trace"
+      },
+      "repeatedFailingToolCalls": {
+        "title": "Repeated failing tool calls",
+        "when": "Same tool fails 3+ times in one trace"
+      },
+      "toolLoop": { "title": "tool_loop", "when": "Same input 3+ times in the last 5 tool calls" },
+      "retryStorm": { "title": "retry_storm", "when": "One call retried 4+ times" },
+      "falseIdempotent": {
+        "title": "false_idempotent",
+        "when": "Same input, different outputs, no side effect"
+      },
+      "dspmUnbound": { "title": "dspm_unbound", "when": "A run has no data_security binding" },
+      "policyAbsent": {
+        "title": "policy_absent",
+        "when": "A run has no sandbox or content_safety binding"
+      },
+      "failureRate": {
+        "title": "Failure rate",
+        "when": "Over 5% of traces fail, 50+ traces, per agent (last 30 min)"
+      },
+      "cost": { "title": "Hourly cost", "when": "A model's spend over the last hour is above $5" },
+      "scoreDrop": {
+        "title": "Score drop",
+        "when": "A score config's healthy rate falls below its target"
+      },
+      "evaluatorLag": {
+        "title": "Evaluator lag",
+        "when": "Scores arrive more than 10 min after their targets (p95)"
+      }
+    }
+  },
+  "oneClickEval": {
+    "title": "Evaluate {agent}",
+    "subtitle": "Creates a scorer, a score config and a sampled job",
+    "start": "Start evaluating",
+    "fullForm": "Open full job form",
+    "what": "What to check",
+    "catalogFailed": "The judge library could not be loaded. Use the full job form.",
+    "judge": "Judge model",
+    "provider": {
+      "testing": "Testing…",
+      "ok": "Connected",
+      "failed": "Did not answer"
+    },
+    "noProvider": "No LLM provider is set up for judges yet.",
+    "addProvider": "Add provider",
+    "stream": "Trace stream",
+    "sample": "Sample",
+    "estimate": "≈ {n} traces a day are scored",
+    "mapping": "Field mapping, automatic",
+    "mappingInput": "the root LLM call's input",
+    "mappingOutput": "the root LLM call's output",
+    "created": "Started {name}. Scores appear as traces complete.",
+    "failed": "Could not start the evaluation: {reason}",
+    "evaluate": "Evaluate {agent}…",
+    "anAgent": "an agent",
+    "emptyActionDesc": "Pick a built-in judge; the scorer, score config and a sampled job are created for you",
+    "manual": "Set up a job manually"
+  },
+  "aiQualityCard": {
+    "title": "Quality",
+    "subtitle": "{config}, average score",
+    "unhealthy": "{unhealthy} of {total} scores are unhealthy",
+    "openInQuality": "Open in Quality",
+    "noScores": "No scores yet",
+    "noScoresBody": "Nothing scores {agent} in this window.",
+    "thisPeriod": "this period"
+  },
+  "aiTraceDrawer": {
+    "title": "Trace {id}",
+    "trace": "Trace",
+    "evaluatorTrace": "Evaluator trace",
+    "previousScore": "Previous score",
+    "nextScore": "Next score"
+  },
+  "llmInsightsDrill": {
+    "all": "All",
+    "model": "Model",
+    "user": "User",
+    "prompt": "Prompt",
+    "title": "{panel} · {series}",
+    "window": "{from} to {to}",
+    "trace": "Trace",
+    "cost": "Cost",
+    "duration": "Duration",
+    "empty": "No traces match this selection",
+    "loadFailed": "Could not load the matching traces",
+    "capped": "Showing the newest {n} traces. Open in Traces for all of them.",
+    "filterToThis": "Filter Insights to this",
+    "deltaFlat": "no change",
+    "deltaPct": "{arrow} {value}%",
+    "deltaPt": "{arrow} {value} pt",
+    "vsPrevious": "Compared with the same-length window just before"
+  },
+  "llmTraceOutcome": {
+    "failed": "Failed",
+    "recovered": "Recovered",
+    "ok": "Ok",
+    "outcome": "Outcome",
+    "failureRate": "Failure rate",
+    "failureRateNote": "{failed} of {total} traces",
+    "failureRateTooltip": "A trace fails when its root span or its last LLM or agent turn ends in error. Tool errors the agent got past do not count.",
+    "recoveredErrors": "Recovered tool errors",
+    "recoveredNote": "traces · {errors} errors",
+    "recoveredTooltip": "Traces with a failed span that still ended well, usually a tool call the agent retried. Click to open them.",
+    "failedRoot": "root span error",
+    "failedTurn": "last LLM turn",
+    "recoveredDetail": "retried, turn ended OK",
+    "toolErrors": "{n} tool error | {n} tool errors",
+    "sessionFailedTooltip": "{n} turn failed | {n} turns failed"
+  },
+  "requestTimeline": {
+    "took": "{step} took {duration}.",
+    "failedAfter": "{step} failed after {duration}.",
+    "causeDb": "{time} of it was one {system} query, {name} on {target}.",
+    "cause": "{time} of it was {name} on {target}.",
+    "causeBare": "{time} of it was {name}.",
+    "selfModel": "All of it was the model call.",
+    "selfWork": "The step itself held the time, not a child span.",
+    "logsAndMetrics": "Logs and metrics",
+    "locked": "Correlated logs, metrics and pod state need an enterprise license.",
+    "logsLane": "Logs {services}",
+    "podLane": "Pod {pod}",
+    "podHealthy": "healthy",
+    "podRestarted": "restarted",
+    "podOomKilled": "OOMKilled",
+    "podSentenceHealthy": "Pod {pod} stayed healthy.",
+    "podSentenceRestarted": "Pod {pod} restarted around this call.",
+    "podSentenceOomKilled": "Pod {pod} was OOMKilled around this call.",
+    "metricMax": "max {value}",
+    "behindThisStep": "Behind this step",
+    "openInWaterfall": "Open in waterfall"
+  },
+  "experimentsAtScale": {
+    "groupBy": "Group by",
+    "groupByOption": {
+      "pr": "Pull request",
+      "branch": "Branch",
+      "commit": "Commit",
+      "none": "None"
+    },
+    "sort": "Sort",
+    "sortOption": {
+      "recent": "Newest first",
+      "regressions": "Regressions first"
+    },
+    "prGroup": "PR #{pr}",
+    "noGroup": {
+      "pr": "No pull request",
+      "branch": "No branch",
+      "commit": "No commit"
+    },
+    "groupRuns": "{count} run | {count} runs",
+    "groupBranch": "{runs} · branch {branch}",
+    "groupCommit": "{runs} · all on commit {commit}",
+    "regressedCount": "{count} regressed",
+    "improvedCount": "{count} improved",
+    "vsBaseline": "vs baseline",
+    "outcome": {
+      "regressed": "Regressed",
+      "improved": "Improved",
+      "unchanged": "Within noise"
+    },
+    "headline": "{score} {delta} pts",
+    "deltaTooltip": "{delta} pts against the baseline. A move past {threshold} pts counts, the same rule as Compare.",
+    "foldCount": "× {count}",
+    "foldTooltip": "{count} runs of this name on one commit. The latest stands for them; expand to see each.",
+    "spread": "{count} runs: {range}",
+    "trendTitle": "Trend against the baseline",
+    "trendScore": "Score",
+    "trendShareOption": "{score} · % healthy",
+    "trendBaseline": "Baseline {name} · {value}",
+    "trendNoisePts": "Noise ±{value} pts",
+    "trendNoise": "Noise ±{value}",
+    "trendAria": "{score} across {count} runs against the baseline at {value}, {regressed} regressed and {improved} improved"
+  },
+  "codeScorer": {
+    "typeDialogIntro": "Choose the scorer type. All three are first-class options.",
+    "typeTitle": "Code",
+    "typeDescription": "Run a short JavaScript function inside OpenObserve. No provider, no token cost.",
+    "typeCta": "Write Code",
+    "createTitle": "New Code Scorer",
+    "editTitle": "Update Code Scorer",
+    "codeSection": "Code",
+    "startFromLabel": "Start from",
+    "startFromPlaceholder": "Pick a starter check",
+    "languageLabel": "Language",
+    "languageJavascript": "JavaScript",
+    "functionLabel": "Function",
+    "variablesLabel": "Variables in this function:",
+    "returnHint": "Return true or false for a Boolean config, a number for Numeric, or a category for Categorical.",
+    "sandboxTitle": "Sandbox",
+    "sandboxNote": "No network or file access. 100 ms and 10 MB per call.",
+    "signatureRequired": "Declare function score(...) with plain parameter names, for example function score(output).",
+    "resultCost": "Cost",
+    "resultCostFree": "$0",
+    "functionSection": "Function",
+    "summaryLabel": "Code",
+    "libraryGroup": "Code checks",
+    "libraryGroupNote": "No provider · $0 a run",
+    "libraryJudgeGroup": "LLM judge scorers from the catalog",
+    "starters": {
+      "json_is_valid": {
+        "title": "JSON is valid",
+        "description": "The output parses as JSON."
+      },
+      "matches_json_schema": {
+        "title": "Matches JSON schema",
+        "description": "The output fits a schema you paste."
+      },
+      "matches_regex": {
+        "title": "Matches regex",
+        "description": "The output matches, or must not match, a pattern."
+      },
+      "cost_at_most": {
+        "title": "Cost at most",
+        "description": "Trace cost stays under a limit, $0.05 by default."
+      },
+      "latency_at_most": {
+        "title": "Latency at most",
+        "description": "Trace duration stays under a limit, 10 s by default."
+      },
+      "exact_match": {
+        "title": "Exact match",
+        "description": "The output equals the expected output. For experiments."
+      }
+    }
+  },
+  "endUserFeedback": {
+    "tab": "Collect from your app",
+    "intro": "Let your app's users rate its answers. Your server mints a short-lived token for each trace and user; the browser posts the vote with it, so the browser never holds a credential.",
+    "serverStep": "1. Your server asks for a token",
+    "serverHint": "Use a service account that can create Score Configs. The token is valid for 15 minutes, for one trace, this Score Config and one user.",
+    "browserStep": "2. The browser sends the vote",
+    "browserHint": "value is true for Helpful and false for Not helpful. comment is optional, up to 1,000 characters. A changed vote replaces the earlier one.",
+    "checking": "Checking for votes…",
+    "lastVote": "Last vote {time}",
+    "votes": "{n} vote in 24 hours | {n} votes in 24 hours",
+    "helpful": "{pct}% helpful",
+    "noVotes": "No votes in the last 24 hours",
+    "sendTestVote": "Send a test vote",
+    "testVoteSent": "Test vote recorded",
+    "testVoteFailed": "Failed to send a test vote",
+    "column": "Feedback",
+    "notHelpful": "Not helpful",
+    "helpfulVote": "Helpful",
+    "noVote": "No vote",
+    "quoted": "“{comment}”"
+  },
+  "evalSpend": {
+    "cost": {
+      "title": "Cost",
+      "basis": "From the last 7 days of matched traffic",
+      "setPrice": "Set a price in Model Pricing",
+      "scopes": {
+        "span": "spans",
+        "trace": "traces",
+        "session": "sessions"
+      },
+      "scope": {
+        "span": "span",
+        "trace": "trace",
+        "session": "session"
+      },
+      "scored": "Scored a day",
+      "scoredNote": "{percent}% of {n} {scope} a day",
+      "perDay": "Judge cost a day",
+      "cannot": "Cannot estimate",
+      "noJudge": "No LLM judge in this job",
+      "busiest": "Busiest day {amount}",
+      "perTarget": "Per {scope}",
+      "tokens": "≈ {tokens} tokens to {model}"
+    },
+    "budget": {
+      "label": "Daily budget, all regions",
+      "help": "Org default {amount}. Resets at 00:00 UTC.",
+      "validation": "Enter a budget above 0",
+      "onReach": "When the budget is reached",
+      "actions": {
+        "pause": {
+          "label": "Pause until 00:00 UTC",
+          "help": "Scores stop. The job resumes on its own."
+        },
+        "keep_running": {
+          "label": "Keep running",
+          "help": "The job keeps scoring and shows as over budget."
+        }
+      }
+    },
+    "backfill": {
+      "label": "Backfill",
+      "off": "Off",
+      "pastDays": "Past {count} day | Past {count} days",
+      "help": "Scores matched targets from before the job started, once, when it is activated.",
+      "targets": "≈ {n} {scope} once",
+      "cost": "about {amount}",
+      "countsToday": "counts toward today's budget",
+      "capped": "capped at {n} to fit the budget",
+      "queued": "Backfill queued {n} evaluations",
+      "queuedSome": "Backfill queued {n} evaluations; {failed} could not be queued",
+      "failed": "The backfill could not start"
+    },
+    "preview": {
+      "note": "Updates as you change the filter, sampling or scorers.",
+      "estimating": "Estimating cost…",
+      "cannot": "Cost cannot be estimated",
+      "perDay": "≈ {amount} a day"
+    },
+    "list": {
+      "spendToday": "Spend today",
+      "pausedBudget": "Paused · budget",
+      "resumeToday": "Resume until 00:00 UTC",
+      "editBudget": "Edit budget",
+      "banner": "{name} paused at its {amount} daily budget at {time} UTC. It resumes at 00:00 UTC, in {hours} h {minutes} m."
+    },
+    "oneClick": {
+      "budget": "Pauses at a {amount} daily budget."
+    }
+  },
+  "evalWorkload": {
+    "tab": "Workload",
+    "stopped": {
+      "text": "No scores since {time}, {ago}. Traffic did not stop: {n} {scope} matched since then.",
+      "lastError": "The latest judge calls failed with {kind}.",
+      "fixProvider": "Fix provider",
+      "viewFailures": "View failures"
+    },
+    "lag": {
+      "title": "Score lag · p95",
+      "note": "target time → score written",
+      "minutes": "{n} min"
+    },
+    "throughput": {
+      "title": "Throughput",
+      "note": "scores per {per} · {n} in window"
+    },
+    "errors": {
+      "title": "Judge errors",
+      "none": "No failed calls in this window",
+      "alertAt": "alert at {pct}%"
+    },
+    "spend": {
+      "title": "Judge spend",
+      "note": "per {per} · {today} today",
+      "noteBudget": "per {per} · {today} today of {budget}"
+    },
+    "alerts": {
+      "title": "Alerts for this job"
+    },
+    "pack": {
+      "scoresStopped": {
+        "title": "Eval job: scores stopped",
+        "when": "No score for 30 min from a job that scored in the same hour yesterday"
+      },
+      "judgeErrorRate": {
+        "title": "Eval job: judge error rate",
+        "when": "Over 20% of judge calls fail, 3+ calls, per job (last 30 min)"
+      }
     }
   },
   "llmDataTrust": {

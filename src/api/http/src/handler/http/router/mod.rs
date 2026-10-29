@@ -1093,6 +1093,18 @@ pub fn basic_routes() -> Router {
             );
     }
 
+    // End-user feedback votes (AIO-40) come from an app's browser with no
+    // session: the signed token in the query is the credential, checked in the
+    // handler like the on-call ack link.
+    #[cfg(feature = "enterprise")]
+    {
+        router = router.route(
+            "/api/v2/{org_id}/annotations/public",
+            post(annotations::post_feedback_vote)
+                .layer(DefaultBodyLimit::max(annotations::FEEDBACK_MAX_BODY_BYTES)),
+        );
+    }
+
     // Unauthenticated like status pages: the share token is checked in the handler.
     #[cfg(feature = "enterprise")]
     if get_config().public_ai_chat.enabled {
@@ -1792,6 +1804,8 @@ pub fn service_routes() -> Router {
 
                 // On-demand human annotation from Discovery
                 .route("/{org_id}/annotations", post(annotations::annotate_target))
+                // End-user feedback (AIO-40): an app's server mints the token its browser votes with.
+                .route("/{org_id}/annotations/token", post(annotations::mint_feedback_token))
 
                 // LLM score-based Discovery
                 .route("/{org_id}/discovery", get(discovery::list_discovery_items))

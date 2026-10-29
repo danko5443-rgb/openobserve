@@ -19,6 +19,7 @@ import { b64EncodeUnicode, generateTraceContext } from "@/utils/zincutils";
 import type { GenAiAgentListItem } from "@/services/gen-ai-agent-mapping.service";
 import { buildAgentTraceFilter } from "../llmAgentFilter";
 import { compactSql, llmCallUsageSum } from "../config/llmInsightsPanels";
+import { TRACE_ERROR_SPANS_SQL, TRACE_FAILED_SQL } from "../llmTraceOutcome";
 import useHttpStreaming from "@/composables/useStreamingSearch";
 import { useStore } from "vuex";
 
@@ -37,6 +38,30 @@ export interface LLMSparklineSeries {
   traces: number[];
   p95Micros: number[];
   errorRate: number[];
+}
+
+/** Trace outcomes behind the Failure rate and Recovered tool errors tiles (AIO-06). */
+export interface LLMTraceOutcomes {
+  traceCount: number;
+  failedCount: number;
+  /** Traces with an errored span that still ended well. */
+  recoveredCount: number;
+  /** Errored spans inside those recovered traces. */
+  recoveredErrorCount: number;
+  /** Per-bucket failure rate (%), for the tile's sparkline. */
+  failureRate: number[];
+}
+
+/** `WHERE <agent> AND <page filters>`, or "" for the whole stream. */
+function scopeWhere(
+  agent: GenAiAgentListItem | null | undefined,
+  streamName: string,
+  extraFilter: string,
+): string {
+  const clause = [buildAgentTraceFilter(agent, streamName), extraFilter]
+    .filter(Boolean)
+    .join(" AND ");
+  return clause ? `WHERE ${clause}` : "";
 }
 
 const EMPTY_KPI: LLMKPI = {
@@ -85,6 +110,8 @@ export function useLLMInsights() {
   // the rest of the strip (histogram-backed) never blocks on it.
   const p95Loading = ref(false);
   const error = ref<string | null>(null);
+  const outcomes = ref<LLMTraceOutcomes | null>(null);
+  const outcomesLoading = ref(false);
   const hasLoadedOnce = ref(false);
   const availableStreams = ref<string[]>([]);
   const streamsLoaded = ref(false);
@@ -193,13 +220,13 @@ export function useLLMInsights() {
     startTime: number,
     endTime: number,
     agent?: GenAiAgentListItem | null,
+    extraFilter = "",
   ): Promise<number> {
-    const agentFilter = buildAgentTraceFilter(agent, streamName);
     const sql = compactSql(`
       SELECT
         COALESCE(approx_percentile_cont(duration, 0.95) FILTER (WHERE gen_ai_operation_name IS NOT NULL), 0) as p95_duration
       FROM "${streamName}"
-      ${agentFilter ? `WHERE ${agentFilter}` : ""}
+      ${scopeWhere(agent, streamName, extraFilter)}
     `);
 
     let p95 = 0;
@@ -239,6 +266,7 @@ export function useLLMInsights() {
     startTime: number,
     endTime: number,
     agent?: GenAiAgentListItem | null,
+    extraFilter = "",
   ): Promise<Omit<LLMKPI, "p95DurationMicros">> {
     // One size must cover every bucket — there's no pagination here. 10_000
     // is a wide margin (even a 1-year window at a coarse interval stays under).
@@ -259,7 +287,7 @@ export function useLLMInsights() {
         ${usageSum("gen_ai_usage_cost")} as total_cost,
         COALESCE(approx_percentile_cont(duration, 0.95) FILTER (WHERE gen_ai_operation_name IS NOT NULL), 0) as p95_duration
       FROM "${streamName}"
-      ${agentFilter ? `WHERE ${agentFilter}` : ""}
+      ${scopeWhere(agent, streamName, extraFilter)}
       GROUP BY ts
       ORDER BY ts
     `);
@@ -343,6 +371,7 @@ export function useLLMInsights() {
     startTime: number,
     endTime: number,
     agent?: GenAiAgentListItem | null,
+    extraFilter = "",
   ): Promise<void> {
     if (!streamName || !startTime || !endTime) return;
     loading.value = true;
@@ -351,7 +380,7 @@ export function useLLMInsights() {
 
     // Histogram: powers the sparklines AND the additive KPI totals. Drives
     // the main strip skeleton via `loading` — resolves independently of P95.
-    const summaryPromise = fetchSummary(streamName, startTime, endTime, agent)
+    const summaryPromise = fetchSummary(streamName, startTime, endTime, agent, extraFilter)
       .then((totals) => {
         // Preserve whatever the (independent) P95 query has set so far — it's
         // patched into `p95DurationMicros` separately when it resolves.
@@ -372,7 +401,7 @@ export function useLLMInsights() {
 
     // Separate whole-window P95 with its own loader — never blocks the strip.
     // On failure the card degrades to "0" instead of failing the whole page.
-    const p95Promise = fetchLatency(streamName, startTime, endTime, agent)
+    const p95Promise = fetchLatency(streamName, startTime, endTime, agent, extraFilter)
       .then((p95DurationMicros) => {
         kpi.value = { ...kpi.value, p95DurationMicros };
       })
@@ -388,12 +417,83 @@ export function useLLMInsights() {
     await Promise.all([summaryPromise, p95Promise]);
   }
 
+  /**
+   * Trace outcomes for the window (AIO-06): a per-trace subquery applies the
+   * failure rule, then buckets each trace by its first span, so every trace
+   * counts once and the bucket sums are the window totals. Runs beside
+   * `fetchAll` with its own loader; on failure the two outcome tiles show "—"
+   * instead of failing the strip.
+   */
+  async function fetchOutcomes(
+    streamName: string,
+    startTime: number,
+    endTime: number,
+    agent?: GenAiAgentListItem | null,
+    extraFilter = "",
+  ): Promise<void> {
+    if (!streamName || !startTime || !endTime) return;
+    outcomesLoading.value = true;
+    const sql = compactSql(`
+      SELECT
+        histogram(first_ts) as ts,
+        COUNT(*) as trace_count,
+        SUM(failed) as failed_count,
+        SUM(CASE WHEN failed = 0 AND error_spans > 0 THEN 1 ELSE 0 END) as recovered_count,
+        SUM(CASE WHEN failed = 0 THEN error_spans ELSE 0 END) as recovered_errors
+      FROM (
+        SELECT trace_id, MIN(_timestamp) as first_ts,
+          ${TRACE_FAILED_SQL} as failed, ${TRACE_ERROR_SPANS_SQL} as error_spans
+        FROM "${streamName}"
+        ${scopeWhere(agent, streamName, extraFilter)}
+        GROUP BY trace_id
+      )
+      GROUP BY ts
+      ORDER BY ts
+    `);
+    const next: LLMTraceOutcomes = {
+      traceCount: 0,
+      failedCount: 0,
+      recoveredCount: 0,
+      recoveredErrorCount: 0,
+      failureRate: [],
+    };
+    try {
+      await executeQuery(
+        sql,
+        streamName,
+        startTime,
+        endTime,
+        (hits) => {
+          for (const row of hits) {
+            const traces = Number(row.trace_count) || 0;
+            const failed = Number(row.failed_count) || 0;
+            next.traceCount += traces;
+            next.failedCount += failed;
+            next.recoveredCount += Number(row.recovered_count) || 0;
+            next.recoveredErrorCount += Number(row.recovered_errors) || 0;
+            next.failureRate.push(traces > 0 ? (failed / traces) * 100 : 0);
+          }
+        },
+        10_000,
+      );
+      outcomes.value = next;
+    } catch (e: any) {
+      console.error("LLM Insights outcome fetch error:", e);
+      outcomes.value = null;
+    } finally {
+      outcomesLoading.value = false;
+    }
+  }
+
   return {
     kpi,
     sparklines,
     loading,
     p95Loading,
     error,
+    outcomes,
+    outcomesLoading,
+    fetchOutcomes,
     hasLoadedOnce,
     availableStreams,
     streamsLoaded,

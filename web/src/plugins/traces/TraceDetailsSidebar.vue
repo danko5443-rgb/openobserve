@@ -428,6 +428,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           >
         </OTab>
         <OTab
+          v-if="spanIssues.length"
+          name="issues"
+          data-test="trace-details-sidebar-tabs-issues"
+          class="gap-1! font-normal! capitalize"
+        >
+          {{ t("traceIssues.tab") }}
+          <OTag type="countChip" value="warning" class="ms-0">{{ spanIssues.length }}</OTag>
+        </OTab>
+        <OTab
           v-if="hasDbSpan"
           name="database"
           :label="t('common.db')"
@@ -480,6 +489,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         grow
         class="h-full overflow-y-auto"
       >
+        <OTabPanel v-if="spanIssues.length" name="issues">
+          <TraceIssuesPanel
+            :issues="spanIssues"
+            @select-span="(id: string) => $emit('open-issue', id)"
+          />
+        </OTabPanel>
         <!-- LLM Preview Tab Panel -->
         <OTabPanel v-if="canPreviewSpan" name="preview" class="llm-preview-panel p-3">
           <div class="llm-preview-container h-full! w-full overflow-hidden overflow-x-auto">
@@ -929,7 +944,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             :available-dimensions="correlationProps.availableDimensions"
             :semantic-groups="correlationProps.semanticGroups"
             :fts-fields="correlationProps.ftsFields"
-            :time-range="correlationProps.timeRange"
+            :time-range="logsTimeRange"
             :hide-view-related-button="true"
             :hide-search-term-actions="false"
             :hide-dimension-filters="true"
@@ -1003,6 +1018,8 @@ import OTabPanels from "@/lib/navigation/Tabs/OTabPanels.vue";
 import OTabPanel from "@/lib/navigation/Tabs/OTabPanel.vue";
 import OToggleGroup from "@/lib/core/ToggleGroup/OToggleGroup.vue";
 import OToggleGroupItem from "@/lib/core/ToggleGroup/OToggleGroupItem.vue";
+import TraceIssuesPanel from "./TraceIssuesPanel.vue";
+import type { TraceIssue } from "./traceIssues";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
@@ -1175,6 +1192,16 @@ export default defineComponent({
       type: Number as PropType<number | null>,
       default: null,
     },
+    // AIO-33: the trace's rule issues; the Issues tab shows those this span is evidence for.
+    issues: {
+      type: Array as PropType<TraceIssue[]>,
+      default: () => [],
+    },
+    // A timeline lane's log tick (µs): the Logs tab then ends there.
+    logsAtUs: {
+      type: Number as PropType<number | null>,
+      default: null,
+    },
     activeTab: {
       type: String,
       default: "attributes",
@@ -1197,6 +1224,7 @@ export default defineComponent({
     },
   },
   components: {
+    TraceIssuesPanel,
     OSeparator,
     OTabs,
     OTab,
@@ -1246,8 +1274,12 @@ export default defineComponent({
     "evaluate",
     "add-to-dataset",
     "update:activeTab",
+    "open-issue",
   ],
   setup(props, { emit }) {
+    const spanIssues = computed(() =>
+      props.issues.filter((i) => i.evidence.includes(String(props.span?.span_id ?? ""))),
+    );
     const serviceDetectionConfig = inject(TRACE_SERVICE_DETECTION_KEY, ref(null));
     const { resolveSpanIdentity } = useSpanServiceDetection(serviceDetectionConfig);
     const { t } = useI18nTyped();
@@ -2765,10 +2797,18 @@ export default defineComponent({
     const correlationAccess = useLockedAffordance("correlation");
     const { open: openUpgradeDialog } = useEnterpriseUpgradeDialog();
 
+    // Newest first, so a window ending at the tick puts its line on top.
+    const logsTimeRange = computed(() => {
+      const range = correlationProps.value?.timeRange;
+      return range && props.logsAtUs ? { ...range, endTime: props.logsAtUs + 1 } : range;
+    });
+
     return {
       t,
       correlationAccess,
+      logsTimeRange,
       activeTabModel,
+      spanIssues,
       filterActions,
       closeSidebar,
       eventColumns,

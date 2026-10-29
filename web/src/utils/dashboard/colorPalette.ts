@@ -134,6 +134,8 @@ export const LLM_LATENCY_SERIES_COLORS = {
 
 /** LLM Insights single-metric panel colours (mirror the KPI tile tones). */
 export const LLM_ERRORS_COLOR = "#ef4444";
+/** Traces whose errors the agent got past (AIO-06): amber, next to the red failures. */
+export const LLM_RECOVERED_COLOR = "#f59e0b";
 export const LLM_SPANS_COLOR = "#3b82f6";
 export const LLM_TOKENS_COLOR = "#a855f7";
 

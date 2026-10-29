@@ -130,7 +130,8 @@ describe("useSessions — fetchPage: field mapping", () => {
     expect(row.errorCount).toBe(0);
   });
 
-  it("status='error' when error_count > 0", async () => {
+  // Without failed_trace_count (a stream that cannot tell), any errored span fails it.
+  it("status='failed' when error_count > 0 and no outcome count came back", async () => {
     const hit = {
       session_id: "s1",
       start_time: 1000,
@@ -148,8 +149,27 @@ describe("useSessions — fetchPage: field mapping", () => {
     const { sessions, fetchPage } = useSessions();
     await fetchPage("stream", 1000, 2000, 0, 25);
 
-    expect(sessions.value[0].status).toBe("error");
+    expect(sessions.value[0].status).toBe("failed");
     expect(sessions.value[0].errorCount).toBe(3);
+  });
+
+  // AIO-06: a session fails only when one of its traces failed.
+  it.each([
+    [0, 3, "recovered"],
+    [1, 3, "failed"],
+    [0, 0, "ok"],
+  ])("failed_trace_count %i with %i error spans → %s", async (failed, errors, status) => {
+    mockSessionsList.mockResolvedValue({
+      data: {
+        hits: [
+          { session_id: "s1", trace_count: 1, error_count: errors, failed_trace_count: failed },
+        ],
+        total: 1,
+      },
+    });
+    const { sessions, fetchPage } = useSessions();
+    await fetchPage("stream", 1000, 2000, 0, 25);
+    expect(sessions.value[0].status).toBe(status);
   });
 
   it("status='ok' when error_count is 0", async () => {

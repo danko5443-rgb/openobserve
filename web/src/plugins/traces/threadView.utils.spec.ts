@@ -28,6 +28,7 @@ import {
   buildTurnDetail,
   spanTimeBounds,
   maxOf,
+  toolCallParts,
 } from "./threadView.utils";
 
 // ===========================================================================
@@ -372,13 +373,14 @@ describe("extractContent", () => {
     expect(extractContent([{ type: "reasoning", content: "let me check" }])).toBe("let me check");
   });
 
-  it("renders a tool_call part instead of dropping the turn", () => {
+  // AIO-21: the Thread view draws tool calls as cards (toolCallParts), so the
+  // bubble keeps only the text around them.
+  it("leaves tool_call parts out of the text, for the tool cards", () => {
     const result = extractContent([
       { type: "reasoning", content: "checking the weather" },
       { type: "tool_call", name: "get_weather", arguments: { city: "Boston" } },
     ]);
-    expect(result).toContain("checking the weather");
-    expect(result).toContain("get_weather");
+    expect(result).toBe("checking the weather");
   });
 
   it("renders a tool_call_response part", () => {
@@ -420,14 +422,31 @@ describe("extractContent", () => {
 
   // The exact shape ingested by repro_14127.py's turn 3 (issue-14127-repro/):
   // a real tool-calling turn, end to end through extractContent.
-  it("renders a full tool-calling turn (thinking + tool_call)", () => {
+  it("keeps the thinking of a tool-calling turn and drops the call text", () => {
     const result = extractContent([
       { type: "thinking", content: "I should call get_weather for Boston." },
       { type: "tool_call", id: "call_1", name: "get_weather", arguments: { city: "Boston" } },
     ]);
-    expect(result).toContain("I should call get_weather for Boston.");
-    expect(result).toContain("Called get_weather");
-    expect(result).toContain("Boston");
+    expect(result).toBe("I should call get_weather for Boston.");
+    expect(result).not.toContain("Called get_weather");
+  });
+
+  it("lists a turn's tool calls from semconv parts and OpenAI tool_calls", () => {
+    expect(
+      toolCallParts(
+        JSON.stringify([
+          {
+            role: "assistant",
+            parts: [{ type: "tool_call", id: "c1", name: "grep", arguments: { q: "x" } }],
+            tool_calls: [{ id: "c2", function: { name: "read", arguments: "{}" } }],
+          },
+        ]),
+      ),
+    ).toEqual([
+      { id: "c1", name: "grep", arguments: { q: "x" } },
+      { id: "c2", name: "read", arguments: "{}" },
+    ]);
+    expect(toolCallParts(null)).toEqual([]);
   });
 
   it("renders the tool response side of that turn (tool_call_response with `result`)", () => {

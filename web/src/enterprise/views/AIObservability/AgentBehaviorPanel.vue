@@ -20,6 +20,13 @@
     <div class="shrink-0" data-test="agent-behavior-summary">
       <OStatStrip :items="behaviorStats" :loading="tableLoading" />
     </div>
+    <!-- Rule hits on the traces (AIO-33), triaged on the Issues page. -->
+    <AiIssuesCard
+      :source-stream="sourceStream"
+      :agent-name="agentFilter"
+      :start-time="startTime"
+      :end-time="endTime"
+    />
     <!-- Looping agents. Same card/header/table shape as the sibling LLM Insights
          panels (LLMErrorTable) so the whole page reads as one surface. -->
     <div
@@ -31,7 +38,20 @@
         :hint="t('aiObservability.behavior.loopsHint')"
         icon="restart-alt"
         tone="warning"
-      />
+      >
+        <!-- AIO-20: the ai-agents alert pack, in one screen. -->
+        <template #actions>
+          <OButton
+            variant="outline"
+            size="sm"
+            icon-left="notifications-active"
+            data-test="agent-behavior-install-ai-alerts"
+            @click="packOpen = true"
+          >
+            {{ t("aiAlertPack.open") }}
+          </OButton>
+        </template>
+      </PanelSectionHeader>
       <OTable
         data-test="agent-behavior-loops-table"
         :data="loopRows"
@@ -46,7 +66,19 @@
         pagination="client"
         :empty-message="loopsEmptyMessage"
         @row-click="(r: any) => openDetail('loop', r)"
-      />
+      >
+        <!-- Repeated tool calls for this agent and tool, prefilled (AIO-20). -->
+        <template #cell-actions="{ row }">
+          <span @click.stop>
+            <CreateAlertAction
+              variant="icon"
+              source="ai"
+              :build="() => loopAlert(row)"
+              :data-test="`agent-behavior-loop-create-alert-${row.agent}-${row.tool}`"
+            />
+          </span>
+        </template>
+      </OTable>
     </div>
 
     <!-- Failure taxonomy -->
@@ -95,12 +127,13 @@
       :agent-env="agentEnv"
       :agent-version="agentVersion"
     />
+    <AiAlertPackDialog v-model:open="packOpen" :default-stream="sourceStream" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
-import { useI18nTyped } from "@/types/i18n";
+import { raw, useI18nTyped } from "@/types/i18n";
 import { useStore } from "vuex";
 import OTable from "@/lib/core/Table/OTable.vue";
 import type { OTableColumnDef } from "@/lib/core/Table/OTable.types";
@@ -109,6 +142,11 @@ import OStatStrip from "@/lib/data/StatStrip/OStatStrip.vue";
 import type { StatItem } from "@/lib/data/StatStrip/OStatStrip.types";
 import AgentSignalDetailPanel from "./AgentSignalDetailPanel.vue";
 import PanelSectionHeader from "./PanelSectionHeader.vue";
+import OButton from "@/lib/core/Button/OButton.vue";
+import CreateAlertAction from "@/components/alerts/CreateAlertAction.vue";
+import AiAlertPackDialog from "@/components/alerts/AiAlertPackDialog.vue";
+import AiIssuesCard from "./AiIssuesCard.vue";
+import { buildAiPrefill } from "@/utils/alerts/prefill/fromAi";
 import agentSignalsService, { type AgentSignalRecord } from "@/services/agent_signals";
 import { matchesAgentScope } from "./agentScope";
 
@@ -290,7 +328,17 @@ const loopColumns = computed<OTableColumnDef[]>(() => [
     meta: { align: "right" },
     sortable: true,
   },
+  { id: "actions", header: raw(""), size: 56, meta: { align: "right" }, sortable: false },
 ]);
+
+const packOpen = ref(false);
+const loopAlert = (row: { agentRaw: string | null; tool: string }) =>
+  buildAiPrefill({
+    kind: "repeated_tool_calls",
+    stream: props.sourceStream ?? "",
+    agent: row.agentRaw,
+    tool: row.tool || null,
+  });
 
 const failureColumns = computed<OTableColumnDef[]>(() => [
   {

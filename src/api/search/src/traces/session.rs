@@ -342,7 +342,7 @@ pub async fn get_latest_sessions(
         &trace_id,
         &org_id,
         stream_type,
-        user_id_opt,
+        user_id_opt.clone(),
         &req,
         "".to_string(),
         false,
@@ -379,7 +379,35 @@ pub async fn get_latest_sessions(
             return map_error_to_http_response(&err, Some(trace_id));
         }
     };
-    let sessions_data = normalize_latest_session_hits(resp_summary.hits, &session_ids);
+    let read_rules = SessionReadRules::for_org(&org_id).await;
+    let mut sessions_data =
+        normalize_latest_session_hits(resp_summary.hits, &session_ids, &read_rules);
+
+    // Session status (AIO-06): failed when any of its traces failed. Without this
+    // count the page falls back to "any errored span", so a failed lookup only logs.
+    let has_ref_parent_id = schema
+        .as_ref()
+        .is_some_and(|s| s.field_with_name("reference_parent_span_id").is_ok());
+    if validated.has_gen_ai && has_ref_parent_id {
+        req.query.sql = build_session_outcome_sql(&stream_name, &session_ids, &validated);
+        match SearchService::cache::search(
+            &trace_id,
+            &org_id,
+            stream_type,
+            user_id_opt,
+            &req,
+            "".to_string(),
+            false,
+            None,
+            false,
+        )
+        .instrument(http_span.clone())
+        .await
+        {
+            Ok(res) => merge_failed_trace_counts(&mut sessions_data, &res.hits),
+            Err(err) => log::warn!("get sessions outcome error: {err:?}"),
+        }
+    }
 
     let time = start.elapsed().as_secs_f64();
     metrics::HTTP_RESPONSE_TIME
@@ -951,6 +979,75 @@ fn build_session_service_breakdown_sql(
     )
 }
 
+/// 1 when the grouped trace failed, else 0 (AIO-06, rule AIO-D3): its root span,
+/// or its last LLM or agent turn, ended in error. Errors the agent got past, such
+/// as a retried tool call, leave the trace "recovered". The root span is left out
+/// of the turns because it always ends last. Use inside `GROUP BY trace_id`, on a
+/// gen_ai stream with `reference_parent_span_id`. Mirrors `TRACE_FAILED_SQL` in
+/// web/src/plugins/traces/llmTraceOutcome.ts.
+fn trace_failed_expr() -> String {
+    const ROOT: &str = "(reference_parent_span_id IS NULL OR reference_parent_span_id = '')";
+    let turn = format!(
+        "gen_ai_operation_name IN ('chat', 'text_completion', 'generate_content', 'invoke_agent') \
+         AND NOT {ROOT}"
+    );
+    format!(
+        "CASE WHEN max(CASE WHEN {ROOT} AND span_status = 'ERROR' THEN 1 ELSE 0 END) = 1 \
+         OR max(CASE WHEN {turn} AND span_status = 'ERROR' THEN end_time END) \
+            = max(CASE WHEN {turn} THEN end_time END) \
+         THEN 1 ELSE 0 END"
+    )
+}
+
+/// Failed traces per listed session: a session failed when any of its turns failed.
+fn build_session_outcome_sql(
+    stream_name: &str,
+    session_ids: &[String],
+    validated: &super::schema_compat::ValidatedLlmSchema,
+) -> String {
+    let session_id_col = validated.columns.session_id;
+    let session_ids_sql = session_ids
+        .iter()
+        .map(|session_id| format!("'{}'", session_id.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let failed = trace_failed_expr();
+    let stream_ident = traces::session::quote_identifier(stream_name);
+    format!(
+        "SELECT session_id, sum(failed) AS failed_trace_count FROM (\
+         SELECT {session_id_col} AS session_id, trace_id, {failed} AS failed \
+         FROM {stream_ident} WHERE {session_id_col} IN ({session_ids_sql}) \
+         GROUP BY {session_id_col}, trace_id) \
+         GROUP BY session_id"
+    )
+}
+
+/// Adds `failed_trace_count` to each session hit; a session with no row has none.
+fn merge_failed_trace_counts(hits: &mut [json::Value], outcome_hits: &[json::Value]) {
+    let failed: HashMap<&str, i64> = outcome_hits
+        .iter()
+        .filter_map(|hit| {
+            let session_id = hit.get("session_id")?.as_str()?;
+            Some((
+                session_id,
+                json::get_int_value(hit.get("failed_trace_count").unwrap_or_default()),
+            ))
+        })
+        .collect();
+    for hit in hits {
+        let Some(hit) = hit.as_object_mut() else {
+            continue;
+        };
+        let count = hit
+            .get("session_id")
+            .and_then(|value| value.as_str())
+            .and_then(|session_id| failed.get(session_id))
+            .copied()
+            .unwrap_or(0);
+        hit.insert("failed_trace_count".to_string(), json::json!(count));
+    }
+}
+
 fn build_session_trace_details_sql(
     stream_name: &str,
     validated: &super::schema_compat::ValidatedLlmSchema,
@@ -959,6 +1056,12 @@ fn build_session_trace_details_sql(
     trace_id_predicate: &str,
 ) -> String {
     let user_id_col = validated.columns.user_id;
+    // gen_ai streams carry gen_ai_operation_name (provisioned with the sentinel).
+    let failed_expr = if has_ref_parent_id && validated.has_gen_ai {
+        trace_failed_expr()
+    } else {
+        "null".to_string()
+    };
     let (root_service_name_expr, root_operation_name_expr) = if has_ref_parent_id {
         (
             "max(CASE WHEN reference_parent_span_id IS NULL OR reference_parent_span_id = '' THEN service_name END)",
@@ -974,6 +1077,7 @@ fn build_session_trace_details_sql(
          count(DISTINCT {service_key_expr}) AS service_count, \
          {root_service_name_expr} AS root_service_name, \
          {root_operation_name_expr} AS root_operation_name, \
+         {failed_expr} AS failed, \
          first_value(service_name ORDER BY {TIMESTAMP_COL_NAME} ASC) AS first_service_name, \
          first_value(operation_name ORDER BY {TIMESTAMP_COL_NAME} ASC) AS first_operation_name, \
          array_agg(DISTINCT {user_id_col}) \
@@ -1101,6 +1205,10 @@ fn build_session_trace_response_item(
     let trace_end_time = json::get_int_value(item.get("trace_end_time").unwrap_or_default());
     let span_count = json::get_int_value(item.get("span_count").unwrap_or_default());
     let error_count = json::get_int_value(item.get("error_count").unwrap_or_default());
+    let failed = item
+        .get("failed")
+        .and_then(json::Value::as_i64)
+        .map(|v| v == 1);
     let max_duration = json::get_int_value(item.get("max_duration").unwrap_or_default());
     let service_count = json::get_int_value(item.get("service_count").unwrap_or_default());
     let root_service_name = item
@@ -1162,6 +1270,7 @@ fn build_session_trace_response_item(
             span_count.try_into().unwrap_or_default(),
             error_count.try_into().unwrap_or_default(),
         ],
+        failed,
         service_name: svc_list,
         first_event: json::json!({
             "service_name": event_service_name,
@@ -1633,9 +1742,15 @@ fn build_latest_sessions_sql(
     );
     let unpriced_selects = validated.unpriced_selects();
     let stream_ident = traces::session::quote_identifier(stream_name);
+    // Picks the agent's harness patterns when the session is read (AIO-22).
+    let agent_name_expr = if validated.has_gen_ai {
+        "max(gen_ai_agent_name) as agent_name, "
+    } else {
+        ""
+    };
 
     format!(
-        "SELECT {session_id_col} as session_id, \
+        "SELECT {session_id_col} as session_id, {agent_name_expr}\
          min(start_time) as start_time, \
          max(end_time) as end_time, \
          CASE WHEN max(end_time) > min(start_time) \
@@ -1663,14 +1778,75 @@ fn build_latest_sessions_sql(
     )
 }
 
+/// How sessions read for one org (AIO-22): each agent's harness patterns,
+/// compiled once per request, and where a session's short title comes from.
+#[derive(Default)]
+struct SessionReadRules {
+    harness: HashMap<String, Vec<config::meta::gen_ai::CompiledHarnessPattern>>,
+    title: config::meta::gen_ai::SessionTitleMode,
+}
+
+impl SessionReadRules {
+    async fn for_org(org_id: &str) -> Self {
+        let config = db::system_settings::get_saved_gen_ai_agent_mapping_config(org_id).await;
+        Self {
+            harness: config
+                .harness_patterns
+                .iter()
+                .map(|r| {
+                    (
+                        r.agent.clone(),
+                        config::meta::gen_ai::compile_harness_patterns(&r.patterns),
+                    )
+                })
+                .collect(),
+            title: config.session_title,
+        }
+    }
+}
+
+const FIRST_MESSAGE_LEN: usize = 400;
+const SESSION_TITLE_LEN: usize = 60;
+
 fn normalize_latest_session_hits(
     mut hits: Vec<json::Value>,
     session_ids: &[String],
+    rules: &SessionReadRules,
 ) -> Vec<json::Value> {
     for hit in &mut hits {
-        let first_user_message = hit
-            .get("gen_ai_input_messages")
-            .and_then(|value| extract_first_user_message(value, 400));
+        let patterns = hit
+            .get("agent_name")
+            .and_then(|value| value.as_str())
+            .and_then(|agent| rules.harness.get(agent));
+        // Harness text is hidden before the cut, or a long wrapper would push the
+        // request itself past it.
+        let full = hit.get("gen_ai_input_messages").and_then(|value| {
+            extract_first_user_message(
+                value,
+                if patterns.is_some() {
+                    usize::MAX
+                } else {
+                    FIRST_MESSAGE_LEN
+                },
+            )
+        });
+        let (first_user_message, hidden, only) = match (full, patterns) {
+            (Some(text), Some(patterns)) => {
+                let stripped = config::meta::gen_ai::strip_harness(&text, patterns);
+                (
+                    truncate_message(stripped.text, FIRST_MESSAGE_LEN),
+                    stripped.hidden,
+                    stripped.only,
+                )
+            }
+            (full, _) => (full, 0, None),
+        };
+        let title = match rules.title {
+            config::meta::gen_ai::SessionTitleMode::FirstRequest => {
+                first_user_message.as_deref().map(session_title)
+            }
+            config::meta::gen_ai::SessionTitleMode::Off => None,
+        };
         let Some(hit) = hit.as_object_mut() else {
             continue;
         };
@@ -1681,6 +1857,15 @@ fn normalize_latest_session_hits(
             "first_user_message".to_string(),
             first_user_message.map_or(json::Value::Null, json::Value::String),
         );
+        if hidden > 0 {
+            hit.insert("harness_hidden".to_string(), json::json!(hidden));
+        }
+        if let Some(only) = only {
+            hit.insert("harness_only".to_string(), json::Value::String(only));
+        }
+        if let Some(title) = title {
+            hit.insert("session_title".to_string(), json::Value::String(title));
+        }
 
         if let Some(json::Value::Array(user_ids)) = hit.get_mut("user_ids") {
             user_ids.retain(|value| value.as_str().is_some_and(|value| !value.is_empty()));
@@ -1714,6 +1899,9 @@ struct SessionTraceResponseItem {
     end_time: i64,
     duration: i64,
     spans: [u16; 2],
+    /// The turn failed by the AIO-06 rule; absent when the stream cannot tell.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failed: Option<bool>,
     service_name: Vec<SessionTraceServiceNameItem>,
     first_event: json::Value,
     gen_ai_usage_input_tokens: i64,
@@ -1741,6 +1929,21 @@ struct SessionTraceServiceNameItem {
     duration: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     service_type: Option<String>,
+}
+
+/// The request's first line, cut at a word near `SESSION_TITLE_LEN` characters.
+fn session_title(request: &str) -> String {
+    let line = request
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    if line.chars().count() <= SESSION_TITLE_LEN {
+        return line.to_string();
+    }
+    let cut: String = line.chars().take(SESSION_TITLE_LEN).collect();
+    let cut = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    format!("{}…", cut.trim_end())
 }
 
 fn truncate_message(value: String, max_len: usize) -> Option<String> {
@@ -1859,6 +2062,108 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn session_outcome_sql_counts_failed_traces_per_session() {
+        let validated = super::super::schema_compat::ValidatedLlmSchema::fallback(true);
+        let sql = build_session_outcome_sql(
+            "default",
+            &["s-1".to_string(), "o'k".to_string()],
+            &validated,
+        );
+        assert!(
+            sql.starts_with("SELECT session_id, sum(failed) AS failed_trace_count FROM (SELECT")
+        );
+        assert!(sql.contains("WHERE gen_ai_conversation_id IN ('s-1','o''k')"));
+        assert!(sql.contains("GROUP BY gen_ai_conversation_id, trace_id) GROUP BY session_id"));
+        // Root span error or last LLM/agent turn error; the root is not a turn.
+        assert!(sql.contains("max(CASE WHEN (reference_parent_span_id IS NULL OR reference_parent_span_id = '') AND span_status = 'ERROR' THEN 1 ELSE 0 END) = 1"));
+        assert!(sql.contains("AND NOT (reference_parent_span_id IS NULL OR reference_parent_span_id = '') AND span_status = 'ERROR' THEN end_time END)"));
+    }
+
+    // AIO-22: the agent's harness text is hidden before the 400-character cut.
+    #[test]
+    fn session_hits_hide_the_agents_harness_text_and_take_a_title() {
+        let wrapper = format!("<system-reminder>{}</system-reminder>", "x".repeat(600));
+        let messages = json!([{"role": "user", "content": format!("{wrapper}\nFix the Thread durations in the trace view please")}]);
+        let hits = vec![
+            json!({"session_id": "a", "agent_name": "omp", "gen_ai_input_messages": messages.clone()}),
+            json!({"session_id": "b", "agent_name": "support-bot", "gen_ai_input_messages": messages}),
+            json!({"session_id": "c", "agent_name": "omp", "gen_ai_input_messages": [{"role": "user", "content": "<job>nightly</job>"}]}),
+        ];
+        let mut rules = SessionReadRules {
+            title: config::meta::gen_ai::SessionTitleMode::FirstRequest,
+            ..Default::default()
+        };
+        rules.harness.insert(
+            "omp".to_string(),
+            config::meta::gen_ai::compile_harness_patterns(&[
+                "tag system-reminder".to_string(),
+                "tag job".to_string(),
+            ]),
+        );
+        let ids = ["a".to_string(), "b".to_string(), "c".to_string()];
+        let out = normalize_latest_session_hits(hits, &ids, &rules);
+        assert_eq!(
+            out[0]["first_user_message"],
+            "Fix the Thread durations in the trace view please"
+        );
+        assert_eq!(out[0]["harness_hidden"], 1);
+        assert_eq!(
+            out[0]["session_title"],
+            "Fix the Thread durations in the trace view please"
+        );
+        // Another agent's sessions are untouched.
+        assert!(out[1].get("harness_hidden").is_none());
+        assert!(
+            out[1]["first_user_message"]
+                .as_str()
+                .unwrap()
+                .starts_with("<system-reminder>")
+        );
+        assert_eq!(out[2]["harness_only"], "job");
+        assert!(out[2]["first_user_message"].is_null());
+    }
+
+    #[test]
+    fn session_title_cuts_at_a_word() {
+        assert_eq!(session_title("short ask"), "short ask");
+        let long = "Rebase the AI observability branch onto origin main and fix every conflict";
+        let title = session_title(long);
+        assert!(title.ends_with('…'));
+        assert!(title.chars().count() <= SESSION_TITLE_LEN + 1);
+    }
+
+    #[test]
+    fn merge_failed_trace_counts_defaults_missing_sessions_to_zero() {
+        let mut hits = vec![json!({"session_id": "a"}), json!({"session_id": "b"})];
+        merge_failed_trace_counts(
+            &mut hits,
+            &[json!({"session_id": "a", "failed_trace_count": 2})],
+        );
+        assert_eq!(hits[0]["failed_trace_count"], json!(2));
+        assert_eq!(hits[1]["failed_trace_count"], json!(0));
+    }
+
+    #[test]
+    fn session_trace_details_sql_flags_failed_turns_only_when_the_stream_can_tell() {
+        let gen_ai = super::super::schema_compat::ValidatedLlmSchema::fallback(true);
+        let sql = build_session_trace_details_sql("default", &gen_ai, true, "service_name", "1=1");
+        assert!(sql.contains("THEN 1 ELSE 0 END AS failed"));
+        let no_parent =
+            build_session_trace_details_sql("default", &gen_ai, false, "service_name", "1=1");
+        assert!(no_parent.contains("null AS failed"));
+        let item = json!({"trace_id": "t", "failed": 1});
+        assert_eq!(
+            build_session_trace_response_item(&item).unwrap().2.failed,
+            Some(true)
+        );
+        let item = json!({"trace_id": "t", "failed": null});
+        assert_eq!(
+            build_session_trace_response_item(&item).unwrap().2.failed,
+            None
+        );
+    }
 
     #[test]
     fn session_trace_details_sql_aggregates_by_trace_id() {
@@ -2498,6 +2803,7 @@ mod tests {
         let normalized = normalize_latest_session_hits(
             hits,
             &["session-2".to_string(), "session-1".to_string()],
+            &SessionReadRules::default(),
         );
         assert_eq!(normalized[0]["session_id"], "session-2");
         assert_eq!(normalized[1]["first_user_message"], "show me the weather");

@@ -485,7 +485,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                             :tooltip="false"
                             class="text-compact text-text-heading font-semibold"
                           >
-                            {{ trace.turnUserMessage || "—" }}
+                            {{ turnTitle(trace) }}
                           </OTruncatedText>
                           <OTruncatedText
                             as="div"
@@ -584,6 +584,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                               <span class="text-text-heading text-xs font-bold">
                                 {{ t("traces.sessionDetail.roles.user") }}
                               </span>
+                              <!-- AIO-22: harness text hidden by the agent's patterns; Show puts it back. -->
+                              <button
+                                v-if="turnDetail(trace.traceId)?.harnessHidden"
+                                type="button"
+                                class="text-2xs text-text-muted ms-auto me-2 hover:underline"
+                                :data-test="`session-turn-harness-${trace.traceId}`"
+                                @click.stop="revealHarness(trace.traceId)"
+                              >
+                                {{
+                                  t(
+                                    "readableSessions.hidden",
+                                    { n: turnDetail(trace.traceId)!.harnessHidden },
+                                    turnDetail(trace.traceId)!.harnessHidden!,
+                                  )
+                                }}
+                                · {{ t("readableSessions.show") }}
+                              </button>
                               <OIcon
                                 v-if="turnDetail(trace.traceId)?.userMessage"
                                 name="content-copy"
@@ -606,6 +623,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                      "Show calls" thread used by the Pretty view (ThreadView) -->
                           <ThreadToolCalls
                             :tool-calls="toolCallsForTurn(trace.traceId)"
+                            collapsed
                             @span-selected="onSpanSelected"
                           />
 
@@ -959,6 +977,8 @@ import {
   type TurnDetail,
 } from "./composables/useSessions";
 import { buildTurnDetail } from "./threadView.utils";
+import { patternsForAgent, stripHarness, type HarnessPatternRule } from "./harnessText";
+import genAiAgentMappingService from "@/services/gen-ai-agent-mapping.service";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OPageLayout from "@/lib/core/PageLayout/OPageLayout.vue";
@@ -996,7 +1016,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useStore();
 
-const { fetchSession, fetchSessionSpans } = useSessions();
+const { fetchSession, fetchSessionSpans, fetchSessionAgent } = useSessions();
 const detail = ref<SessionDetail | null>(null);
 const traces = ref<SessionTraceRow[]>([]);
 const loading = ref(false);
@@ -1403,7 +1423,7 @@ const expandedTurns = reactive<Record<string, boolean>>({});
 // the transcript can never disagree. Spans are grouped by `trace_id`; the
 // per-trace projection lives in `threadView.utils` alongside ThreadView's, so
 // the two views classify spans identically.
-const turnDetailsByTrace = computed<Record<string, TurnDetail>>(() => {
+const turnDetailsByTrace = computed<Record<string, TurnDetail & { harnessHidden?: number }>>(() => {
   const byTrace: Record<string, any[]> = {};
   for (const s of sessionSpans.value) {
     const tid = String(s.trace_id || "");
@@ -1411,9 +1431,28 @@ const turnDetailsByTrace = computed<Record<string, TurnDetail>>(() => {
     (byTrace[tid] ||= []).push(s);
   }
 
-  const out: Record<string, TurnDetail> = {};
+  const patterns = patternsForAgent(harnessRules.value, sessionAgent.value);
+  const out: Record<string, TurnDetail & { harnessHidden?: number }> = {};
   for (const tid of Object.keys(byTrace)) {
-    out[tid] = buildTurnDetail(tid, byTrace[tid]);
+    const detail = buildTurnDetail(tid, byTrace[tid]);
+    const content = detail.userMessage?.content;
+    const stripped =
+      patterns.length && content && !revealedHarness.value.has(tid)
+        ? stripHarness(content, patterns)
+        : null;
+    out[tid] =
+      stripped?.hidden && detail.userMessage
+        ? {
+            ...detail,
+            userMessage: {
+              ...detail.userMessage,
+              content: stripped.text
+                ? raw(stripped.text)
+                : t("readableSessions.onlyHarness", { tag: `<${stripped.only}>` }),
+            },
+            harnessHidden: stripped.hidden,
+          }
+        : detail;
   }
   return out;
 });
@@ -1452,7 +1491,7 @@ function originalTurnIndex(traceId: string): number {
 function isExpanded(traceId: string): boolean {
   return !!expandedTurns[traceId];
 }
-function turnDetail(traceId: string): TurnDetail | undefined {
+function turnDetail(traceId: string): (TurnDetail & { harnessHidden?: number }) | undefined {
   return turnDetailsByTrace.value[traceId];
 }
 
@@ -1486,6 +1525,44 @@ function toggleTurn(traceId: string) {
 // once on first switch (all gen_ai spans across the session's traces).
 const viewMode = ref<"collapsed" | "pretty">("collapsed");
 const sessionSpans = ref<any[]>([]);
+
+// AIO-22: the session's agent and its harness patterns (GenAI Agent Mapping).
+// Turn previews hide that text; "Show" puts it back for one turn. The spans and
+// the span sidebar always keep everything.
+const harnessRules = ref<HarnessPatternRule[]>([]);
+const revealedHarness = ref<Set<string>>(new Set());
+const sessionAgent = ref<string | null>(null);
+function revealHarness(traceId: string) {
+  revealedHarness.value = new Set(revealedHarness.value).add(traceId);
+}
+// Looked up only once some agent has patterns and the turns are known.
+async function loadSessionAgent() {
+  if (!harnessRules.value.length || !traces.value.length) return;
+  sessionAgent.value = await fetchSessionAgent(
+    streamName.value,
+    traces.value.map((tr) => tr.traceId),
+    startTime.value,
+    endTime.value,
+  );
+}
+// The turn row's title, with harness text hidden like the turn body.
+function turnTitle(tr: SessionTraceRow) {
+  const patterns = patternsForAgent(harnessRules.value, sessionAgent.value);
+  if (!tr.turnUserMessage || !patterns.length || revealedHarness.value.has(tr.traceId))
+    return raw(tr.turnUserMessage || "—");
+  const stripped = stripHarness(tr.turnUserMessage, patterns);
+  return stripped.text
+    ? raw(stripped.text)
+    : t("readableSessions.onlyHarness", { tag: `<${stripped.only}>` });
+}
+// Enterprise only; elsewhere the request fails and previews stay as they are.
+genAiAgentMappingService
+  .get(store.state.selectedOrganization?.identifier ?? "")
+  .then((c) => {
+    harnessRules.value = c.harness_patterns;
+    loadSessionAgent();
+  })
+  .catch(() => {});
 const sessionSpansLoading = ref(false);
 const sessionSpansLoaded = ref(false);
 
@@ -1700,6 +1777,7 @@ async function load() {
     );
     detail.value = result.detail;
     traces.value = result.traces;
+    loadSessionAgent();
     // Fetch the session spans in the background — powers the rail's Tool
     // Hotspots and makes the Pretty view instant. Not awaited (the page is
     // usable from `traces` alone).

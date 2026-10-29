@@ -69,6 +69,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <template #cell-trace_id="{ value }">
         <span>{{ value }}</span>
       </template>
+
+      <!-- What happened next (AIO-06): a failed span inside a trace that still
+           ended well is Recovered. -->
+      <template #cell-outcome="{ row }">
+        <span v-if="row.outcome" class="inline-flex items-center gap-1.5">
+          <OTag type="sessionStatus" :value="row.outcome" />
+          <span class="text-2xs text-text-secondary">{{ outcomeDetail(row) }}</span>
+        </span>
+      </template>
     </OTable>
   </LLMPanelCard>
 </template>
@@ -78,11 +87,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useStore } from "vuex";
 import { useI18nTyped } from "@/types/i18n";
 import OTable from "@/lib/core/Table/OTable.vue";
+import OTag from "@/lib/core/Badge/OTag.vue";
 import LLMPanelCard from "./LLMPanelCard.vue";
 import { COL, type OTableColumnDef } from "@/lib/core/Table/OTable.types";
 import { type LLMPanelDef, renderPanelSql } from "./config/llmInsightsPanels";
 import { useLLMStreamQuery } from "./composables/useLLMStreamQuery";
 import { timestampToTimezoneDate } from "@/utils/timezone";
+import { traceOutcome, traceOutcomesSql } from "./llmTraceOutcome";
 // Shared in-memory cache (module singleton) — survives this table's remount on
 // every tab toggle, so returning to a selection restores instantly. See
 // llmInsightsCache.ts for why it lives there and not in component state.
@@ -164,10 +175,49 @@ const columns: OTableColumnDef[] = [
     header: t("traces.lLMErrorTable.traceId"),
     accessorKey: "trace_id",
     sortable: false,
-    size: COL.url,
+    size: COL.streamName,
+    meta: { align: "left" },
+  },
+  {
+    id: "outcome",
+    header: t("llmTraceOutcome.outcome"),
+    accessorKey: "outcome",
+    sortable: false,
+    size: COL.type,
     meta: { align: "left" },
   },
 ];
+
+function outcomeDetail(row: any) {
+  if (row.outcome === "recovered") return t("llmTraceOutcome.recoveredDetail");
+  if (row.outcome !== "failed") return "";
+  return Number(row.failed_root) === 1
+    ? t("llmTraceOutcome.failedRoot")
+    : t("llmTraceOutcome.failedTurn");
+}
+
+// Outcome of each row's trace, by the shared rule. Best effort: without it the
+// column stays empty and the errors still show.
+async function withOutcomes(hits: any[]): Promise<any[]> {
+  const ids = [...new Set(hits.map((h) => String(h.trace_id || "")).filter(Boolean))];
+  if (!ids.length) return hits;
+  try {
+    const sql = traceOutcomesSql(props.streamName, ids, props.agentFilter);
+    const byTrace = new Map(
+      ((await executeQuery(sql, props.startTime, props.endTime)) as any[]).map((o) => [
+        String(o.trace_id),
+        o,
+      ]),
+    );
+    return hits.map((h) => {
+      const o = byTrace.get(String(h.trace_id));
+      return o ? { ...h, outcome: traceOutcome(o), failed_root: o.failed_root } : h;
+    });
+  } catch (e) {
+    console.error(`[LLM panel ${props.panel.id}] outcome fetch error`, e);
+    return hits;
+  }
+}
 
 function onRowClick(row: any) {
   emit("view-trace", String(row?.trace_id || ""));
@@ -203,7 +253,9 @@ async function loadErrors() {
     agentFilter: props.agentFilter,
   });
   try {
-    const hits = await executeQuery(sql, props.startTime, props.endTime);
+    const hits = await withOutcomes(
+      (await executeQuery(sql, props.startTime, props.endTime)) as any[],
+    );
     if (seq !== loadSeq) return;
     // OTable needs a stable row-key; error spans can repeat a trace_id, so key
     // by position instead.

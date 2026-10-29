@@ -124,6 +124,9 @@ describe("AIObservabilityShell — OSS builds (isEnterprise and isCloud both fal
     expect(keys).toEqual([
       "llmInsights",
       "sessions",
+      "issues",
+      "users",
+      "budgets",
       "agentGraph",
       "agentBehavior",
       "quality",
@@ -192,6 +195,9 @@ describe("AIObservabilityShell — OSS builds (isEnterprise and isCloud both fal
 const ALL_ITEM_KEYS = [
   "llmInsights",
   "sessions",
+  "issues",
+  "users",
+  "budgets",
   "agentGraph",
   "agentBehavior",
   "quality",
@@ -218,7 +224,15 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const groups = groupsOf(wrapper);
     expect(groups.map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
     const monitorKeys = groups[0].items.map((i) => i.key);
-    expect(monitorKeys).toEqual(["llmInsights", "sessions", "agentGraph", "agentBehavior"]);
+    expect(monitorKeys).toEqual([
+      "llmInsights",
+      "sessions",
+      "issues",
+      "users",
+      "budgets",
+      "agentGraph",
+      "agentBehavior",
+    ]);
     expect(itemsOf(wrapper).map((i) => i.key)).toEqual(ALL_ITEM_KEYS);
     expect(itemsOf(wrapper).every((i) => !i.locked)).toBe(true);
   });
@@ -231,6 +245,9 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     expect(groups[0].items.map((i) => i.key)).toEqual([
       "llmInsights",
       "sessions",
+      "issues",
+      "users",
+      "budgets",
       "agentGraph",
       "agentBehavior",
     ]);
@@ -263,6 +280,9 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     expect(itemsOf(wrapper).map((i) => i.key)).toEqual([
       "llmInsights",
       "sessions",
+      "issues",
+      "users",
+      "budgets",
       "agentGraph",
       "agentBehavior",
       "prompts",

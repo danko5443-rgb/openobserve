@@ -29,12 +29,19 @@
  */
 
 import { type I18nKey } from "@/types/i18n";
+import type { AiAlertKind } from "@/utils/alerts/prefill/fromAi";
 import {
   LLM_LATENCY_SERIES_COLORS,
   LLM_ERRORS_COLOR,
+  LLM_RECOVERED_COLOR,
   LLM_SPANS_COLOR,
   LLM_TOKENS_COLOR,
 } from "@/utils/dashboard/colorPalette";
+import {
+  TRACE_ERROR_SPANS_SQL,
+  TRACE_FAILED_SQL,
+  TRACE_OUTCOME_SPANS_SQL,
+} from "../llmTraceOutcome";
 
 export type LLMPanelType = "stacked-area" | "stacked-bar" | "horizontal-bar" | "table";
 
@@ -105,11 +112,27 @@ export interface LLMPanelDef {
    * series instead of `query.valueField`.
    */
   series?: Array<{ field: string; label: string; color: string }>;
+  /** Fixed colors for breakdown values the SQL labels with `{{t:key}}`. */
+  seriesColors?: Array<{ labelKey: I18nKey; color: string }>;
   /** Column definitions for "table" panels. */
   columns?: LLMTableColumn[];
   /** i18n key for the message shown when the panel has no data (overrides "No data"). */
   emptyStateKey?: I18nKey;
+  /**
+   * Click-through (AIO-26): what a clicked point selects. `seriesSql` is the
+   * expression the series/category value was computed from (a trace matches
+   * when any span has that value); `outcome` maps the clicked value series
+   * (`failed` / `recovered`) to the trace outcome.
+   */
+  drill?: { seriesSql?: string; outcome?: true };
+  /** "Create alert" from this panel (AIO-20): the pack template it maps to. */
+  alert?: AiAlertKind;
 }
+
+/** The series expressions a drill can select on, shared with the panels. */
+export const MODEL_SERIES_SQL = "gen_ai_response_model";
+const KIND_SERIES_SQL = "LOWER(COALESCE(gen_ai_operation_name, 'span'))";
+const SERVICE_SERIES_SQL = "COALESCE(service_name, 'unknown')";
 
 // Time-range pruning is handled by the search engine via the start_time /
 // end_time fields on the request payload — no need to repeat it in WHERE.
@@ -165,6 +188,8 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     subtitleKey: "aiObservability.panels.costTrend.subtitle",
     type: "stacked-bar",
     layout: { colSpan: 1 },
+    drill: { seriesSql: MODEL_SERIES_SQL },
+    alert: "cost",
     query: {
       // Cost field populated by the backend extractor from
       // gen_ai.usage.cost / Langfuse cost_details — same source the Traces
@@ -191,6 +216,7 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     subtitleKey: "aiObservability.panels.tokenTrend.subtitle",
     type: "stacked-bar",
     layout: { colSpan: 1 },
+    drill: { seriesSql: MODEL_SERIES_SQL },
     query: {
       sql: `
         SELECT
@@ -213,11 +239,12 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     subtitleKey: "aiObservability.panels.spanTrend.subtitle",
     type: "stacked-bar",
     layout: { colSpan: 1 },
+    drill: { seriesSql: KIND_SERIES_SQL },
     query: {
       sql: `
         SELECT
           histogram(_timestamp, '{{interval}}') as ts,
-          LOWER(COALESCE(${OBSERVATION_TYPE_FIELD}, 'span')) as kind,
+          ${KIND_SERIES_SQL} as kind,
           COUNT(*) as count
         FROM {{stream}}
         WHERE ${baseFilter}
@@ -236,6 +263,7 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     type: "horizontal-bar",
     layout: { colSpan: 1 },
     limit: 8,
+    drill: { seriesSql: MODEL_SERIES_SQL },
     query: {
       // One row per model with its latency percentiles (ms). Scoped to LLM
       // calls so fast tool/child spans don't drag the tail down. Ordered by
@@ -270,15 +298,16 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     subtitleKey: "aiObservability.panels.tracesOverTime.subtitle",
     type: "stacked-bar",
     layout: { colSpan: 1 },
+    drill: { seriesSql: SERVICE_SERIES_SQL },
     query: {
       sql: `
         SELECT
           histogram(_timestamp, '{{interval}}') as ts,
-          COALESCE(service_name, 'unknown') as service,
+          ${SERVICE_SERIES_SQL} as service,
           approx_distinct(trace_id) as count
         FROM {{stream}}
         WHERE ${baseFilter}
-        GROUP BY ts, COALESCE(service_name, 'unknown')
+        GROUP BY ts, ${SERVICE_SERIES_SQL}
         ORDER BY ts
       `,
       timeField: "ts",
@@ -292,25 +321,42 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     subtitleKey: "aiObservability.panels.errorsOverTime.subtitle",
     type: "stacked-bar",
     layout: { colSpan: 1 },
-    color: LLM_ERRORS_COLOR,
+    drill: { outcome: true },
+    alert: "failure_rate",
     query: {
-      // No baseFilter: OTel SDKs typically propagate the failure to a deep
-      // child span (e.g. tool.<name>) which doesn't carry
-      // gen_ai_operation_name. The chosen stream is LLM-marked, so every
-      // error in it is relevant to the dashboard.
+      // Traces with an error, stacked by outcome (AIO-06), so a burst of
+      // retried tool calls does not read as an outage. No baseFilter on the
+      // spans: SDKs often put the failure on a deep child span with no
+      // gen_ai_operation_name. The inner WHERE comes first, so the agent
+      // predicate is spliced into the per-trace subquery. Each trace is bucketed
+      // by its first span; the dashboards SQL check rejects `_timestamp` as an
+      // alias, so it is `first_ts` and the histogram picks its own interval.
+      // The outcome is a breakdown (that is what stacks), labelled in the
+      // viewer's language through {{t:key}}.
       sql: `
         SELECT
-          histogram(_timestamp, '{{interval}}') as ts,
+          histogram(first_ts) as ts,
+          CASE WHEN failed = 1 THEN '{{t:llmTraceOutcome.failed}}'
+               ELSE '{{t:llmTraceOutcome.recovered}}' END as outcome,
           COUNT(*) as count
-        FROM {{stream}}
-        WHERE span_status = 'ERROR'
-        GROUP BY ts
+        FROM (
+          SELECT trace_id, MIN(_timestamp) as first_ts, ${TRACE_FAILED_SQL} as failed
+          FROM {{stream}}
+          WHERE ${TRACE_OUTCOME_SPANS_SQL}
+          GROUP BY trace_id
+          HAVING ${TRACE_ERROR_SPANS_SQL} > 0
+        )
+        GROUP BY ts, outcome
         ORDER BY ts
       `,
       timeField: "ts",
+      seriesField: "outcome",
       valueField: "count",
-      seriesLabelKey: "traces.lLMInsightsDashboard.errorsSeries",
     },
+    seriesColors: [
+      { labelKey: "llmTraceOutcome.failed", color: LLM_ERRORS_COLOR },
+      { labelKey: "llmTraceOutcome.recovered", color: LLM_RECOVERED_COLOR },
+    ],
   },
   {
     id: "spans-by-model",
@@ -320,6 +366,7 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     layout: { colSpan: 1 },
     color: LLM_SPANS_COLOR,
     limit: 10,
+    drill: { seriesSql: MODEL_SERIES_SQL },
     query: {
       sql: `
         SELECT
@@ -342,6 +389,7 @@ export const LLM_INSIGHTS_PANELS: LLMPanelDef[] = [
     layout: { colSpan: 1 },
     color: LLM_TOKENS_COLOR,
     limit: 10,
+    drill: { seriesSql: MODEL_SERIES_SQL },
     query: {
       sql: `
         SELECT
@@ -431,12 +479,10 @@ export function renderPanelSql(
 
   if (!ctx.agentFilter) return compactSql(rendered);
 
-  // Append the agent predicate to the query's WHERE clause. Every panel has
-  // exactly one flat WHERE, so we splice ` AND
+  // Append the agent predicate to the query's WHERE clause: splice ` AND
   // <agentFilter>` in just before the first GROUP BY / ORDER BY / LIMIT (or at
-  // the end if none). Panel templates carry no subqueries of their own, so the
-  // first such keyword always belongs to the main query, not the agent
-  // sub-select that gets inserted here.
+  // the end if none). A panel with a per-trace subquery puts that subquery's
+  // WHERE first, so the predicate filters the spans, not the trace rows.
   const clause = ` AND ${ctx.agentFilter} `;
   const tail = rendered.match(/\b(group\s+by|order\s+by|limit)\b/i);
   if (tail && tail.index !== undefined) {
@@ -497,6 +543,30 @@ export function compactSql(sql: string): string {
  *   pickInterval(14 * 86400 * 1_000_000)  // "6 hours"    (14 day window)
  *   pickInterval(60 * 86400 * 1_000_000)  // "1 day"      (60 day window)
  */
+/**
+ * Width (µs) of the buckets `histogram(_timestamp)` picks for a window, so a
+ * clicked bar maps back to its time range. Mirrors `generate_histogram_interval`
+ * in src/search/src/sql/visitor/histogram_interval.rs.
+ */
+export function autoHistogramBucketMicros(startMicros: number, endMicros: number): number {
+  const HOUR = 3_600_000_000;
+  const range = endMicros - startMicros;
+  const steps: Array<[number, number]> = [
+    [24 * 60 * HOUR, 24 * HOUR],
+    [24 * 30 * HOUR, 12 * HOUR],
+    [24 * 28 * HOUR, 6 * HOUR],
+    [24 * 21 * HOUR, 3 * HOUR],
+    [24 * 15 * HOUR, 2 * HOUR],
+    [6 * HOUR, HOUR],
+    [2 * HOUR, 60_000_000],
+    [HOUR, 30_000_000],
+    [HOUR / 2, 15_000_000],
+    [10_000_000, 10_000_000],
+  ];
+  for (const [atLeast, width] of steps) if (range >= atLeast) return width;
+  return 1_000_000;
+}
+
 export function pickInterval(durationMicros: number): string {
   // Target ~30 buckets across the window — the histogram() arg is chosen
   // by checking which "round" interval slot the per-bucket width falls in.

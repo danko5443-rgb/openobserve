@@ -131,8 +131,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             size="hero"
             preset="no-score-configs"
             :filtered="!!search.trim() || !!tileFilter"
+            :actions="search.trim() || tileFilter ? undefined : emptyActions"
             @action="onEmptyAction"
           />
+          <OneClickEvalDialog v-model:open="oneClickOpen" :agent="scopeAgent" />
         </div>
       </template>
 
@@ -226,7 +228,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
 import { useOrgId } from "@/composables/query/useOrgId";
@@ -236,6 +238,8 @@ import { COL, type OTableColumnDef } from "@/lib/core/Table/OTable.types";
 import OTag from "@/lib/core/Badge/OTag.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OEmptyState from "@/lib/core/EmptyState/OEmptyState.vue";
+import type { EmptyStateAction } from "@/lib/core/EmptyState/presets";
+import OneClickEvalDialog from "../OneClickEvalDialog.vue";
 import OSearchInput from "@/lib/forms/SearchInput/OSearchInput.vue";
 import OProgressBar from "@/lib/data/ProgressBar/OProgressBar.vue";
 import OStatStrip from "@/lib/data/StatStrip/OStatStrip.vue";
@@ -379,7 +383,32 @@ function openConfig(row: QualityRow) {
     .catch(() => {});
 }
 
+// A first score in one screen (AIO-23), before the manual path.
+const oneClickOpen = ref(false);
+const scopeAgent = computed(() =>
+  typeof route.query.agent === "string" && route.query.agent ? route.query.agent : null,
+);
+const emptyActions = computed<EmptyStateAction[]>(() => [
+  {
+    id: "one-click",
+    icon: "auto-awesome",
+    titleKey: "oneClickEval.evaluate",
+    titleParams: { agent: scopeAgent.value ?? t("oneClickEval.anAgent") },
+    descriptionKey: "oneClickEval.emptyActionDesc",
+  },
+  {
+    id: "create",
+    icon: "add",
+    titleKey: "emptyState.noScoreConfigs.action",
+    descriptionKey: "emptyState.noScoreConfigs.actionDesc",
+  },
+]);
+
 function onEmptyAction(id?: string) {
+  if (id === "one-click") {
+    oneClickOpen.value = true;
+    return;
+  }
   if (id === "clear-filters") {
     search.value = "";
     emit("update:tileFilter", null);

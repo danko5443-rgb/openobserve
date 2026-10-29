@@ -63,6 +63,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       @stream-change="onStreamChange"
     >
       <template #trailing>
+        <!-- AIO-20: install the ai-agents alert pack (loops, failures, cost). -->
+        <OButton
+          v-if="!compareMode"
+          variant="outline"
+          size="sm"
+          icon-left="notifications-active"
+          data-test="llm-insights-install-ai-alerts"
+          @click="alertPackOpen = true"
+        >
+          {{ t("aiAlertPack.open") }}
+        </OButton>
         <!-- Enter compare: only offered when the selected agent actually has ≥2
              versions to compare. A disabled button reads as "broken"; hiding the
              affordance when it can't apply is cleaner (ui-architect empty-affordance
@@ -121,6 +132,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       v-if="noAgentIdentity && scopeReady && !isEmpty"
       data-test="llm-insights"
     />
+
+    <!-- Page filters (AIO-26): narrow the tiles and every panel to the traces
+         that have the value; kept in the URL like agent, env and version. -->
+    <div
+      v-if="availableStreams.length > 0 && scopeReady && !compareMode && !emptyOrg"
+      class="px-page-edge flex flex-wrap items-center gap-2 pt-2"
+      data-test="llm-insights-filters"
+    >
+      <OIcon name="filter-list" size="sm" class="text-text-secondary" />
+      <OSelect
+        v-for="key in INSIGHTS_FILTER_KEYS"
+        :key="key"
+        :model-value="filters[key] ?? null"
+        :options="filterOptions[key]"
+        :label="filterLabels[key]"
+        label-position="inside"
+        :placeholder="t('llmInsightsDrill.all')"
+        clearable
+        size="sm"
+        width="sm"
+        :data-test="`llm-insights-filter-${key}`"
+        @update:model-value="(v: unknown) => setFilter(key, v)"
+      />
+      <!-- Tenant / feature, set from the Cost by panel (AIO-27). -->
+      <template v-for="key in ['tenant', 'feature'] as const" :key="key">
+        <OButton
+          v-if="filters[key]"
+          variant="outline"
+          size="sm"
+          icon-right="close"
+          :data-test="`llm-insights-filter-chip-${key}`"
+          @click="setFilter(key, null)"
+        >
+          {{ t(`llmAttribution.dims.${key}`) }}: {{ filters[key] }}
+        </OButton>
+      </template>
+    </div>
 
     <VersionCompareView
       v-if="genAiAgentMappingAccess.allowed && compareMode"
@@ -269,12 +317,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           @load-samples="fetchSamples"
           @view-trace="onViewTrace"
         />
+        <!-- A new agent version against the previous one (AIO-39). Enterprise only. -->
+        <ReleaseWatchCard
+          v-if="
+            genAiAgentMappingAccess.allowed && filterMode === 'agent' && releaseVariants.length > 1
+          "
+          :variants="releaseVariants"
+          :stream="effectiveStream"
+          class="mt-2.5"
+          @open-compare="enterCompareMode"
+        />
         <!-- KPI strip: keep a skeleton until the first KPI result lands so the
            cards never flash zeros. The panels below render regardless, so
            their queries fire in parallel with the KPI fetch. -->
         <LLMInsightsSkeleton v-if="loading || !hasLoadedOnce" kpi-only class="mb-2.5" />
         <!-- KPI Cards Row -->
-        <KpiCardRow v-else :columns="5" class="mt-2.5 mb-2.5">
+        <KpiCardRow v-else :columns="6" class="mt-2.5 mb-2.5">
           <div
             v-for="card in kpiCards"
             :key="card.label"
@@ -296,12 +354,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                  without it is a bare number. -->
               <div class="flex flex-col gap-1 max-lg:gap-0.5">
                 <div class="mb-1 flex items-center justify-between gap-2 max-lg:mb-0">
-                  <OTruncatedText
-                    as="div"
-                    class="text-2xs text-text-secondary leading-normal font-semibold"
-                  >
-                    {{ card.label }}
-                  </OTruncatedText>
+                  <OTooltip :content="card.tooltip" :disabled="!card.tooltip">
+                    <OTruncatedText
+                      as="div"
+                      class="text-2xs text-text-secondary leading-normal font-semibold"
+                    >
+                      {{ card.label }}
+                    </OTruncatedText>
+                  </OTooltip>
                   <span
                     class="rounded-default bg-surface-subtle text-text-secondary inline-flex h-6 w-6 shrink-0 items-center justify-center"
                   >
@@ -321,16 +381,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     {{ card.unit }}
                   </span>
                 </div>
+                <!-- Change vs the same-length window just before (AIO-26); red or
+                     green follows what is good for this number. -->
+                <span
+                  v-if="card.delta"
+                  class="text-2xs"
+                  :class="
+                    card.delta.tone === 'bad'
+                      ? 'text-error-600'
+                      : card.delta.tone === 'good'
+                        ? 'text-success-600'
+                        : 'text-text-secondary'
+                  "
+                  :title="t('llmInsightsDrill.vsPrevious')"
+                  :data-test="`llm-insights-delta-${card.icon}`"
+                  >{{ card.delta.text }}</span
+                >
                 <button
-                  v-if="card.note"
+                  v-if="card.note && card.onNote"
                   type="button"
-                  class="text-2xs text-status-warning-text self-start text-left underline-offset-2 hover:underline"
+                  class="text-2xs self-start text-left underline-offset-2 hover:underline"
+                  :class="
+                    card.noteTone === 'warning' ? 'text-status-warning-text' : 'text-text-secondary'
+                  "
                   :title="card.noteTooltip"
-                  data-test="llm-insights-cost-unpriced"
-                  @click="openUnpricedTab"
+                  :data-test="card.noteTestId"
+                  @click="card.onNote"
                 >
                   {{ card.note }}
                 </button>
+                <span
+                  v-else-if="card.note"
+                  class="text-2xs text-text-secondary"
+                  :data-test="card.noteTestId"
+                  >{{ card.note }}</span
+                >
               </div>
               <KpiSparkline
                 v-if="card.sparkData && card.sparkData.length > 1"
@@ -342,6 +427,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             </template>
           </div>
         </KpiCardRow>
+
+        <!-- Quality for the agent in scope, or the one-click evaluation when
+             nothing scores it yet (AIO-26, AIO-23). Enterprise only. -->
+        <AiQualityCard
+          v-if="genAiAgentMappingAccess.allowed"
+          :agent="effectiveAgent"
+          :stream="effectiveStream"
+          :start-time="startTime"
+          :end-time="endTime"
+          :traces-per-day="tracesPerDay"
+          class="mb-2.5"
+        />
+
+        <!-- Who drives the bill: cost by tenant, feature or user (AIO-27). -->
+        <LLMCostAttribution
+          :stream="effectiveStream"
+          :scope="scopeClause"
+          :start-time="startTime"
+          :end-time="endTime"
+          class="mb-2.5"
+          @filter="(dim, value) => setFilter(dim === 'user' ? 'user' : dim, value)"
+        />
 
         <!-- Trend panels (config-driven). The key carries the panel-cache id
            (stream + agent + window), so changing tab / agent / time range
@@ -365,7 +472,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               :streamName="effectiveStream"
               :startTime="startTime"
               :endTime="endTime"
-              :agent-filter="agentFilterClause"
+              :agent-filter="scopeClause"
               :cache-key="panelCacheDashboardId"
               @view-trace="onViewTrace"
             />
@@ -375,9 +482,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               :streamName="effectiveStream"
               :startTime="startTime"
               :endTime="endTime"
-              :agent-filter="agentFilterClause"
+              :agent-filter="scopeClause"
               :dashboard-id="panelCacheDashboardId"
               :folder-id="PANEL_CACHE_FOLDER"
+              :alert-agent="effectiveAgent?.name ?? null"
+              @drill="onDrill"
             />
             <!-- Charts name what they leave out: unpriced models are missing from
                the cost trend and tagged on tokens by model (AIO-16). -->
@@ -419,6 +528,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
            cost/latency/error story; behavior lives beside Agent Graph. -->
       </div>
     </template>
+
+    <AiAlertPackDialog v-model:open="alertPackOpen" :default-stream="effectiveStream" />
+
+    <!-- The traces behind a clicked chart point or tile (AIO-26). -->
+    <LLMTraceListDrawer
+      v-model:open="traceListOpen"
+      :stream="effectiveStream"
+      :scope="scopeClause"
+      :selection="traceListSelection"
+      :title="traceListTitle"
+      :subtitle="traceListSubtitle"
+      @view-trace="onViewTrace"
+      @filter="onFilterToModel"
+      @open-in-traces="openTraceListInTraces"
+    />
+
+    <!-- Traces open in a drawer on this page (AIO-21): the scope and the
+         window stay as they were. Last, so it stacks over the trace list. -->
+    <AiTraceDrawer v-model:open="traceDrawerOpen" :trace="drawerTrace" />
   </div>
 </template>
 
@@ -435,6 +563,26 @@ import KpiCardRow from "@/components/common/KpiCardRow.vue";
 import LLMSchemaPanel from "./LLMSchemaPanel.vue";
 import LLMErrorTable from "./LLMErrorTable.vue";
 import LLMDataHealthStrip from "./LLMDataHealthStrip.vue";
+import AiTraceDrawer from "./AiTraceDrawer.vue";
+import LLMTraceListDrawer from "./LLMTraceListDrawer.vue";
+import LLMCostAttribution from "./LLMCostAttribution.vue";
+import AiAlertPackDialog from "@/components/alerts/AiAlertPackDialog.vue";
+import AiQualityCard from "@/enterprise/components/AIObservability/AiQualityCard.vue";
+import ReleaseWatchCard from "@/enterprise/components/AIObservability/ReleaseWatchCard.vue";
+import OSelect from "@/lib/forms/Select/OSelect.vue";
+import { useLLMStreamQuery } from "./composables/useLLMStreamQuery";
+import {
+  ALL_INSIGHTS_FILTER_KEYS,
+  INSIGHTS_FILTER_KEYS,
+  filterOptionsSql,
+  insightsFilterSql,
+  type InsightsFilters,
+  type LLMPanelDrill,
+  type TraceListSelection,
+} from "./llmInsightsDrill";
+import { b64EncodeUnicode } from "@/utils/zincutils";
+import { timestampToTimezoneDate } from "@/utils/timezone";
+import type { AiDrawerTrace } from "./AiTraceDrawer.types";
 import { useLLMDataHealth } from "./composables/useLLMDataHealth";
 import { costKind, unpricedSummary, pricingGapsRoute } from "./llmDataTrust.utils";
 import { formatTokens } from "@/utils/llmUtils";
@@ -453,7 +601,7 @@ import {
   aiIntegrationByRoute,
   referredAiIntegration,
 } from "./llmInsightsEmptyState";
-import { LLM_INSIGHTS_PANELS } from "./config/llmInsightsPanels";
+import { LLM_INSIGHTS_PANELS, autoHistogramBucketMicros } from "./config/llmInsightsPanels";
 import { kpiCache, selectionKey } from "./llmInsightsCache";
 import useStreams from "@/composables/useStreams";
 import genAiAgentMappingService, {
@@ -507,12 +655,18 @@ const {
   loading,
   p95Loading,
   error,
+  outcomes,
+  outcomesLoading,
   fetchAll,
+  fetchOutcomes,
   cancelAll,
   hasLoadedOnce,
   availableStreams,
   streamsLoaded,
 } = useLLMInsights();
+
+// The same numbers for the window just before (AIO-26), for the tiles' deltas.
+const prev = useLLMInsights();
 
 // AI data health (AIO-17) — also feeds the Total Cost tile's unpriced note (AIO-16).
 const {
@@ -676,9 +830,86 @@ const {
   t,
 });
 
+// Every version of the selected agent in its env, for the release watch.
+// One agent's versions in the stream the card measures; another stream's
+// first_seen would pick the wrong pair.
+const releaseVariants = computed(() =>
+  agents.value.filter(
+    (a) =>
+      a.name === selectedAgentName.value &&
+      a.source_stream === effectiveStream.value &&
+      (selectedEnv.value === "__unset__"
+        ? !a.env
+        : !selectedEnv.value || a.env === selectedEnv.value),
+  ),
+);
+
 const agentFilterClause = computed(() =>
   buildAgentTraceFilter(effectiveAgent.value, effectiveStream.value),
 );
+
+// --- Page filters (AIO-26) ----------------------------------------------------
+type FilterKey = (typeof INSIGHTS_FILTER_KEYS)[number];
+const filters = ref<InsightsFilters>(
+  Object.fromEntries(
+    ALL_INSIGHTS_FILTER_KEYS.map((k) => [k, route.query[k]]).filter(
+      ([, v]) => typeof v === "string" && v,
+    ),
+  ),
+);
+const hasActiveFilters = computed(() => ALL_INSIGHTS_FILTER_KEYS.some((k) => !!filters.value[k]));
+const filterClause = computed(() => insightsFilterSql(effectiveStream.value, filters.value));
+// What every panel and the trace list filter on: the agent, then the page filters.
+const scopeClause = computed(() =>
+  [agentFilterClause.value, filterClause.value].filter(Boolean).join(" AND "),
+);
+const filterLabels: Record<FilterKey, I18nText> = {
+  model: t("llmInsightsDrill.model"),
+  user: t("llmInsightsDrill.user"),
+  prompt: t("llmInsightsDrill.prompt"),
+};
+const filterOptions = ref<Record<FilterKey, Array<{ label: I18nText; value: string }>>>({
+  model: [],
+  user: [],
+  prompt: [],
+});
+const { executeQuery: runFilterQuery, cancelAll: cancelFilterQueries } = useLLMStreamQuery();
+
+// Values for the three filters, most traced first, within the agent scope.
+async function loadFilterOptions(start: number, end: number) {
+  const stream = effectiveStream.value;
+  if (!stream) return;
+  await Promise.all(
+    INSIGHTS_FILTER_KEYS.map(async (key) => {
+      try {
+        const hits = (await runFilterQuery(
+          filterOptionsSql(stream, key, agentFilterClause.value),
+          start,
+          end,
+        )) as any[];
+        const options = hits.map((h) => {
+          const version = h.version === null || h.version === undefined ? "" : String(h.version);
+          return key === "prompt"
+            ? {
+                value: `${h.v}@${version}`,
+                label: raw(version ? `${h.v} v${version}` : String(h.v)),
+              }
+            : { value: String(h.v), label: raw(String(h.v)) };
+        });
+        filterOptions.value = { ...filterOptions.value, [key]: options };
+      } catch (e) {
+        console.error(`LLM Insights ${key} filter options error:`, e);
+      }
+    }),
+  );
+}
+
+function setFilter(key: (typeof ALL_INSIGHTS_FILTER_KEYS)[number], value: unknown) {
+  const next = value ? String(value) : undefined;
+  if (filters.value[key] === next) return;
+  filters.value = { ...filters.value, [key]: next };
+  loadInsights();
+}
 
 // --- Version compare mode ----------------------------------------------------
 // "Compare versions…" swaps the single-select dashboard body for
@@ -830,9 +1061,13 @@ watch(
 const PANEL_CACHE_FOLDER = "ai-llm-insights";
 // Env/version are part of the key: each variant filters to different data, so sharing a name must not share a cache slot.
 function selectionAgentKey(): string {
-  if (filterMode.value !== "agent") return "_stream";
+  // Page filters narrow the data, so they are part of the identity too.
+  const f = hasActiveFilters.value
+    ? `::${ALL_INSIGHTS_FILTER_KEYS.map((k) => filters.value[k] ?? "").join("|")}`
+    : "";
+  if (filterMode.value !== "agent") return `_stream${f}`;
   const a = effectiveAgent.value;
-  return a ? `${a.name}::${a.env ?? ""}::${a.version ?? ""}` : "_none";
+  return a ? `${a.name}::${a.env ?? ""}::${a.version ?? ""}${f}` : `_none${f}`;
 }
 const panelCacheDashboardId = computed(() => {
   const agentKey = selectionAgentKey();
@@ -883,28 +1118,113 @@ function syncFilterUrl() {
   const agent = selectedAgent.value
     ? { name: selectedAgent.value.name, env: selectedEnv.value, version: selectedVersion.value }
     : null;
-  const query = scopeUrlQuery(route.query, {
-    mode: filterMode.value,
-    explicit: modeExplicit.value,
-    stream: activeStream.value,
-    agent,
-  });
+  const query: Record<string, any> = {
+    ...scopeUrlQuery(route.query, {
+      mode: filterMode.value,
+      explicit: modeExplicit.value,
+      stream: activeStream.value,
+      agent,
+    }),
+  };
+  for (const key of ALL_INSIGHTS_FILTER_KEYS) {
+    if (filters.value[key]) query[key] = filters.value[key];
+    else delete query[key];
+  }
   // replace (not push) — filter tweaks shouldn't pile up in browser history.
   router.replace({ query }).catch(() => {});
 }
 
-function onViewTrace(traceId: string) {
-  if (!traceId) return;
-  router.push({
-    name: "traceDetails",
+const traceDrawerOpen = ref(false);
+const drawerTrace = ref<AiDrawerTrace | null>(null);
+const alertPackOpen = ref(false);
+
+// --- Click-through (AIO-26) ---------------------------------------------------
+const traceListOpen = ref(false);
+const traceListSelection = ref<TraceListSelection | null>(null);
+const traceListTitle = ref<I18nText>(raw(""));
+const traceListSubtitle = ref<I18nText | undefined>(undefined);
+
+function openTraceList(sel: Partial<TraceListSelection>, title: I18nText) {
+  const selection: TraceListSelection = {
+    startTime: props.startTime,
+    endTime: props.endTime,
+    ...sel,
+  };
+  traceListSelection.value = selection;
+  traceListTitle.value = title;
+  const tz = store.state.timezone || "UTC";
+  traceListSubtitle.value = t("llmInsightsDrill.window", {
+    from: timestampToTimezoneDate(selection.startTime, tz, "MMM d HH:mm"),
+    to: timestampToTimezoneDate(selection.endTime, tz, "MMM d HH:mm"),
+  });
+  traceListOpen.value = true;
+}
+
+// A clicked bar or point: its series, inside its time bucket on a time axis.
+function onDrill(d: LLMPanelDrill) {
+  const drill = d.panel.drill;
+  if (!drill) return;
+  const outcome =
+    drill.outcome && (d.series === "failed" || d.series === "recovered") ? d.series : undefined;
+  const start = d.atMicros ?? props.startTime;
+  const end =
+    d.atMicros !== null
+      ? d.atMicros + autoHistogramBucketMicros(props.startTime, props.endTime)
+      : props.endTime;
+  const series = outcome ? t(`llmTraceOutcome.${outcome}`) : (d.series ?? "");
+  openTraceList(
+    {
+      startTime: Math.max(start, props.startTime),
+      endTime: Math.min(end, props.endTime),
+      seriesSql: drill.seriesSql,
+      seriesValue: drill.seriesSql ? (d.series ?? undefined) : undefined,
+      outcome,
+    },
+    t("llmInsightsDrill.title", { panel: t(d.panel.titleKey), series }),
+  );
+}
+
+function onFilterToModel(model: string) {
+  traceListOpen.value = false;
+  setFilter("model", model);
+}
+
+// The full search in Traces: the same scope and series, as a span filter.
+function openTraceListInTraces() {
+  const sel = traceListSelection.value;
+  if (!sel) return;
+  const where = [
+    agentFilterClause.value,
+    sel.seriesSql && sel.seriesValue !== undefined
+      ? `${sel.seriesSql} = '${sel.seriesValue.replace(/'/g, "''")}'`
+      : "",
+    sel.outcome ? "span_status = 'ERROR'" : "",
+  ]
+    .filter(Boolean)
+    .join(" AND ");
+  const href = router.resolve({
+    name: "traces",
     query: {
       stream: effectiveStream.value,
-      trace_id: traceId,
-      from: props.startTime,
-      to: props.endTime,
+      from: String(sel.startTime),
+      to: String(sel.endTime),
+      query: b64EncodeUnicode(where),
       org_identifier: store.state.selectedOrganization?.identifier,
+      tab: "traces",
     },
-  });
+  }).href;
+  window.open(href, "_blank");
+}
+
+function onViewTrace(traceId: string) {
+  if (!traceId) return;
+  drawerTrace.value = {
+    traceId,
+    stream: effectiveStream.value,
+    startTime: props.startTime,
+    endTime: props.endTime,
+  };
+  traceDrawerOpen.value = true;
 }
 
 // Load the trace-stream list at most once per mount. Both the initial mount
@@ -958,6 +1278,10 @@ async function loadAgents(start: number, end: number, force: boolean) {
 }
 
 const hasData = computed(() => kpi.value.requestCount > 0);
+const tracesPerDay = computed(() => {
+  const days = (props.endTime - props.startTime) / 86_400_000_000;
+  return days > 0 ? kpi.value.traceCount / days : 0;
+});
 
 // DataFusion returns "Schema error: No field named gen_ai_..." when the
 // chosen stream lacks LLM instrumentation. Detect that specific case so we
@@ -982,7 +1306,11 @@ const isEmpty = computed<boolean>(
     streamsLoaded.value &&
     (availableStreams.value.length === 0 ||
       streamHasNoLLMFields.value ||
-      (hasLoadedOnce.value && !hasData.value && !loading.value)),
+      (hasLoadedOnce.value && !hasData.value && !loading.value && !hasActiveFilters.value)),
+);
+// No LLM data at all here: the filter bar has nothing to narrow.
+const emptyOrg = computed(
+  () => streamsLoaded.value && (availableStreams.value.length === 0 || streamHasNoLLMFields.value),
 );
 
 // The integration guide the user most likely needs: the one whose docs page
@@ -1049,9 +1377,16 @@ interface KpiCard {
   unit?: string;
   /** Shown before the value, e.g. "≥" when the cost is a lower bound. */
   prefix?: string;
-  /** Clickable line under the value (unpriced tokens → Model Pricing). */
+  /** Line under the value; a button when `onNote` is set (unpriced tokens → Model Pricing). */
   note?: string;
   noteTooltip?: string;
+  noteTone?: "warning";
+  noteTestId?: string;
+  onNote?: () => void;
+  /** Shown on hover of the label: what the number measures. */
+  tooltip?: I18nText;
+  /** Change vs the previous window of the same length. */
+  delta?: KpiDelta;
   sparkData?: number[];
   sparkColor?: string;
   // True while this card's own value is still loading (P95 only — it rides a
@@ -1059,12 +1394,49 @@ interface KpiCard {
   loading?: boolean;
 }
 
+type KpiDelta = { text: string; tone: "bad" | "good" | "neutral" };
+
+// A rate's change in percentage points; a rising failure rate is bad.
+function pointDelta(now: number, before: number): KpiDelta {
+  const pt = now - before;
+  if (Math.abs(pt) < 0.05) return { text: t("llmInsightsDrill.deltaFlat"), tone: "neutral" };
+  return {
+    text: t("llmInsightsDrill.deltaPt", {
+      arrow: pt > 0 ? "▲" : "▼",
+      value: Math.abs(pt).toFixed(1),
+    }),
+    tone: pt > 0 ? "bad" : "good",
+  };
+}
+
+// Change vs the previous window; `upIsBad` null for numbers with no good direction.
+function pctDelta(
+  now: number,
+  before: number | undefined,
+  upIsBad: boolean | null,
+): KpiDelta | undefined {
+  if (before === undefined || before <= 0 || prev.loading.value) return undefined;
+  const pct = ((now - before) / before) * 100;
+  if (Math.abs(pct) < 0.5) return { text: t("llmInsightsDrill.deltaFlat"), tone: "neutral" };
+  return {
+    text: t("llmInsightsDrill.deltaPct", {
+      arrow: pct > 0 ? "▲" : "▼",
+      value: Math.abs(pct).toFixed(0),
+    }),
+    tone: upIsBad === null ? "neutral" : pct > 0 === upIsBad ? "bad" : "good",
+  };
+}
+
 const kpiCards = computed<KpiCard[]>(() => {
   const tokens = splitNumberWithUnit(kpi.value.totalTokens);
+  const p = prev.hasLoadedOnce.value && !prev.error.value ? prev.kpi.value : null;
+  const po = prev.outcomes.value;
   const traces = splitNumberWithUnit(kpi.value.traceCount);
   const p95 = splitDuration(kpi.value.p95DurationMicros);
-  const errorRate =
-    kpi.value.traceCount > 0 ? (kpi.value.errorCount / kpi.value.traceCount) * 100 : 0;
+  // Failure rate and recovered tool errors come from the per-trace outcome
+  // query (AIO-06); "—" while it loads or when it failed.
+  const o = outcomes.value;
+  const failureRate = o && o.traceCount > 0 ? (o.failedCount / o.traceCount) * 100 : 0;
 
   // Cost is the KPI summary's gen_ai_usage_cost sum over LLM-call spans
   // (llmCallUsageSum). Spans whose model has no price carry no cost, so when the
@@ -1089,10 +1461,14 @@ const kpiCards = computed<KpiCard[]>(() => {
               : "llmDataTrust.tile.unpricedTooltip",
             { tokens: formatTokens(u.tokens), models: unpricedModelNames.value },
           ),
+          noteTone: "warning" as const,
+          noteTestId: "llm-insights-cost-unpriced",
+          onNote: openUnpricedTab,
         }
       : {}),
     sparkData: sparklines.value.cost,
     sparkColor: "#0ea5e9",
+    delta: pctDelta(kpi.value.totalCost, p?.totalCost, true),
   };
 
   return [
@@ -1104,6 +1480,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       unit: tokens.unit,
       sparkData: sparklines.value.tokens,
       sparkColor: "#a855f7",
+      delta: pctDelta(kpi.value.totalTokens, p?.totalTokens, null),
     },
     {
       label: t("traces.lLMInsightsDashboard.totalTraces"),
@@ -1112,6 +1489,7 @@ const kpiCards = computed<KpiCard[]>(() => {
       unit: traces.unit,
       sparkData: sparklines.value.traces,
       sparkColor: "#3b82f6",
+      delta: pctDelta(kpi.value.traceCount, p?.traceCount, null),
     },
     {
       label: t("traces.lLMInsightsDashboard.p95Latency"),
@@ -1121,14 +1499,44 @@ const kpiCards = computed<KpiCard[]>(() => {
       sparkData: sparklines.value.p95Micros,
       sparkColor: "#f97316",
       loading: p95Loading.value,
+      delta: pctDelta(kpi.value.p95DurationMicros, p?.p95DurationMicros, true),
     },
     {
-      label: t("traces.lLMInsightsDashboard.errorRate"),
+      label: t("llmTraceOutcome.failureRate"),
       icon: "error",
-      value: errorRate.toFixed(1),
-      unit: "%",
-      sparkData: sparklines.value.errorRate,
+      value: o ? failureRate.toFixed(1) : "—",
+      unit: o ? "%" : undefined,
+      note: o
+        ? t("llmTraceOutcome.failureRateNote", {
+            failed: o.failedCount.toLocaleString(),
+            total: o.traceCount.toLocaleString(),
+          })
+        : undefined,
+      noteTestId: "llm-insights-failure-rate-note",
+      tooltip: t("llmTraceOutcome.failureRateTooltip"),
+      delta:
+        o && po && po.traceCount > 0 && !prev.outcomesLoading.value
+          ? pointDelta(failureRate, (po.failedCount / po.traceCount) * 100)
+          : undefined,
+      sparkData: o?.failureRate,
       sparkColor: "#ef4444",
+      loading: outcomesLoading.value,
+    },
+    {
+      label: t("llmTraceOutcome.recoveredErrors"),
+      icon: "replay",
+      value: o ? o.recoveredCount.toLocaleString() : "—",
+      note: o
+        ? t("llmTraceOutcome.recoveredNote", { errors: o.recoveredErrorCount.toLocaleString() })
+        : undefined,
+      noteTestId: "llm-insights-recovered-note",
+      onNote:
+        o && o.recoveredCount > 0
+          ? () => openTraceList({ outcome: "recovered" }, t("llmTraceOutcome.recoveredErrors"))
+          : undefined,
+      tooltip: t("llmTraceOutcome.recoveredTooltip"),
+      delta: o && po ? pctDelta(o.recoveredCount, po.recoveredCount, true) : undefined,
+      loading: outcomesLoading.value,
     },
   ];
 });
@@ -1236,6 +1644,7 @@ async function loadInsights(
     }
     // Data health runs alongside (server-cached ~1 min; a manual refresh re-runs it).
     loadDataHealth(force, start, end);
+    void loadFilterOptions(start, end);
 
     // Per-selection KPI retention: restore the summary numbers for this exact
     // stream+agent+window instead of refetching on a tab toggle. `force`
@@ -1245,19 +1654,34 @@ async function loadInsights(
       const snap = kpiCache.get(ck)!;
       kpi.value = snap.kpi;
       sparklines.value = snap.sparklines;
+      outcomes.value = snap.outcomes;
+      if (snap.prevKpi) prev.kpi.value = snap.prevKpi;
+      prev.hasLoadedOnce.value = !!snap.prevKpi;
+      prev.outcomes.value = snap.prevOutcomes ?? null;
       lastRunAt.value = snap.lastRunAt;
       error.value = null; // restoring a prior success — drop any stale error
       hasLoadedOnce.value = true; // we have data → no first-load skeleton
       return;
     }
 
-    await fetchAll(stream, start, end, effectiveAgent.value);
+    const agent = effectiveAgent.value;
+    const extra = filterClause.value;
+    const prevStart = start - (end - start);
+    await Promise.all([
+      fetchAll(stream, start, end, agent, extra),
+      fetchOutcomes(stream, start, end, agent, extra),
+      prev.fetchAll(stream, prevStart, start, agent, extra),
+      prev.fetchOutcomes(stream, prevStart, start, agent, extra),
+    ]);
     // `loading` true→false already stamped lastRunAt via the watcher; snapshot
     // the fresh result so returning to this selection skips the network.
     if (!error.value) {
       kpiCache.set(ck, {
         kpi: kpi.value,
         sparklines: sparklines.value,
+        outcomes: outcomes.value,
+        prevKpi: prev.error.value ? null : prev.kpi.value,
+        prevOutcomes: prev.outcomes.value,
         lastRunAt: lastRunAt.value,
       });
     }
@@ -1355,6 +1779,8 @@ onMounted(() => {
 // the user pays for work they don't see.
 onUnmounted(() => {
   cancelAll();
+  prev.cancelAll();
+  cancelFilterQueries();
   versionCompare.cancel();
 });
 </script>

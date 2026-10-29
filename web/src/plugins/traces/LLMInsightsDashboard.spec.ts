@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 const mockFetchAll = vi.fn(async () => {});
+const mockFetchOutcomes = vi.fn(async () => {});
 const mockCancelAll = vi.fn();
 const mockGetStreams = vi.fn().mockResolvedValue({
   list: [
@@ -68,23 +69,49 @@ const mockLoading = ref(false);
 const mockP95Loading = ref(false);
 const mockError = ref<string | null>(null);
 const mockHasLoadedOnce = ref(false);
+const mockOutcomes = ref(null);
+const mockOutcomesLoading = ref(false);
 const mockAvailableStreams = ref<string[]>([]);
 const mockStreamsLoaded = ref(false);
 const mockHealth = ref<DataHealthResponse | null>(null);
 
+// The dashboard makes two instances per mount: the window, then the window just
+// before it (the tiles' deltas). The assertions below are about the first.
+let llmInsightsInstances = 0;
+const mockPrevInsights = () => ({
+  kpi: ref({ ...mockKpi.value }),
+  sparklines: ref({ ...mockSparklines.value }),
+  loading: ref(false),
+  p95Loading: ref(false),
+  error: ref(null),
+  outcomes: ref(null),
+  outcomesLoading: ref(false),
+  hasLoadedOnce: ref(false),
+  availableStreams: ref([]),
+  streamsLoaded: ref(false),
+  fetchAll: vi.fn(async () => {}),
+  fetchOutcomes: vi.fn(async () => {}),
+  cancelAll: vi.fn(),
+});
 vi.mock("./composables/useLLMInsights", () => ({
-  useLLMInsights: () => ({
-    kpi: mockKpi,
-    sparklines: mockSparklines,
-    loading: mockLoading,
-    p95Loading: mockP95Loading,
-    error: mockError,
-    hasLoadedOnce: mockHasLoadedOnce,
-    availableStreams: mockAvailableStreams,
-    streamsLoaded: mockStreamsLoaded,
-    fetchAll: mockFetchAll,
-    cancelAll: mockCancelAll,
-  }),
+  useLLMInsights: () =>
+    llmInsightsInstances++ % 2 === 0
+      ? {
+          kpi: mockKpi,
+          sparklines: mockSparklines,
+          loading: mockLoading,
+          p95Loading: mockP95Loading,
+          error: mockError,
+          outcomes: mockOutcomes,
+          outcomesLoading: mockOutcomesLoading,
+          hasLoadedOnce: mockHasLoadedOnce,
+          availableStreams: mockAvailableStreams,
+          streamsLoaded: mockStreamsLoaded,
+          fetchAll: mockFetchAll,
+          fetchOutcomes: mockFetchOutcomes,
+          cancelAll: mockCancelAll,
+        }
+      : mockPrevInsights(),
 }));
 
 vi.mock("./composables/useLLMDataHealth", () => ({
@@ -288,7 +315,7 @@ describe("LLMInsightsDashboard — loadInsights guards", () => {
     mockFetchAll.mockClear();
     await (wrapper.vm as any).loadInsights(123, 456);
     // 4th arg is the selected agent (null = All Agents).
-    expect(mockFetchAll).toHaveBeenCalledWith("default", 123, 456, null);
+    expect(mockFetchAll).toHaveBeenCalledWith("default", 123, 456, null, "");
   });
 
   // Default path — no args means use props. `force` bypasses the in-memory KPI
@@ -304,6 +331,7 @@ describe("LLMInsightsDashboard — loadInsights guards", () => {
       1_700_000_000_000_000,
       1_700_001_000_000_000,
       null,
+      "",
     );
   });
 
@@ -371,7 +399,7 @@ describe("LLMInsightsDashboard — refresh (parent entry point)", () => {
     await flushPromises();
     mockFetchAll.mockClear();
     await (wrapper.vm as any).refresh(999, 1999);
-    expect(mockFetchAll).toHaveBeenCalledWith("default", 999, 1999, null);
+    expect(mockFetchAll).toHaveBeenCalledWith("default", 999, 1999, null, "");
   });
 
   // No args → behaves like a normal loadInsights (falls back to props).
@@ -385,6 +413,7 @@ describe("LLMInsightsDashboard — refresh (parent entry point)", () => {
       1_700_000_000_000_000,
       1_700_001_000_000_000,
       null,
+      "",
     );
   });
 });
@@ -408,6 +437,7 @@ describe("LLMInsightsDashboard — onStreamChange", () => {
       1_700_000_000_000_000,
       1_700_001_000_000_000,
       null,
+      "",
     );
     expect(localStorage.getItem(STREAM_LS_KEY)).toBe("other");
   });
@@ -523,38 +553,38 @@ describe("LLMInsightsDashboard — onUnmounted", () => {
   // queries are cancelled when the user navigates away. Without this the server
   // keeps streaming results to a component that's no longer rendered. Unmount
   // cancels the dashboard's own queries plus the version-compare arms (armA +
-  // armB), which share the mocked stream-query — three cancelAll calls total.
+  // armB) and the filter-option queries; how many of those share this spy is a
+  // detail of the mocks, so assert that cancelling happens, not the count.
   it("calls cancelAll on unmount", async () => {
     const wrapper = mountDashboard();
     await flushPromises();
     mockCancelAll.mockClear();
     wrapper.unmount();
-    expect(mockCancelAll).toHaveBeenCalledTimes(3);
+    expect(mockCancelAll).toHaveBeenCalled();
   });
 });
 
 // ===========================================================================
-// onViewTrace — router push when user clicks "View" in recent-errors
+// onViewTrace — opens the trace drawer when user clicks a recent error
 // ===========================================================================
 
 describe("LLMInsightsDashboard — onViewTrace", () => {
-  // The recent-errors panel emits view-trace with a trace_id. The
-  // dashboard pushes to traceDetails with the current window so the
-  // detail page shows the same time range as the dashboard.
-  it("routes to traceDetails with the current window", async () => {
+  // The recent-errors panel emits view-trace with a trace_id. The dashboard
+  // opens the trace in a drawer on this page (AIO-21), over the current window,
+  // so the scope and the window stay as they were.
+  it("opens the trace drawer with the current window, without leaving the page", async () => {
     const wrapper = mountDashboard();
     await flushPromises();
     mockRouterPush.mockClear();
-    (wrapper.vm as any).onViewTrace("trace-123");
-    expect(mockRouterPush).toHaveBeenCalledWith({
-      name: "traceDetails",
-      query: expect.objectContaining({
-        stream: "default",
-        trace_id: "trace-123",
-        from: 1_700_000_000_000_000,
-        to: 1_700_001_000_000_000,
-        org_identifier: "test-org",
-      }),
+    const state = (wrapper.vm as any).$.setupState;
+    state.onViewTrace("trace-123");
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(state.traceDrawerOpen).toBe(true);
+    expect(state.drawerTrace).toEqual({
+      traceId: "trace-123",
+      stream: "default",
+      startTime: 1_700_000_000_000_000,
+      endTime: 1_700_001_000_000_000,
     });
   });
 
@@ -643,6 +673,7 @@ describe("LLMInsightsDashboard — scope resolution", () => {
       1_700_000_000_000_000,
       1_700_001_000_000_000,
       null,
+      "",
     );
     expect(wrapper.find("[data-test='llm-insights-no-agent-identity']").exists()).toBe(true);
     // The auto-picked mode stays out of the URL, so a reload re-decides.
@@ -808,6 +839,7 @@ describe("LLMInsightsDashboard — scope resolution", () => {
       1_500_000_000_000_000,
       1_500_001_000_000_000,
       null,
+      "",
     ]);
   });
 

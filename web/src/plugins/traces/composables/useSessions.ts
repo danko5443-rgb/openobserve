@@ -23,6 +23,20 @@ import type { AgentsLoadError } from "@/enterprise/composables/useAgentScope";
 import { useLLMStreamQuery } from "./useLLMStreamQuery";
 import { compactSql } from "../config/llmInsightsPanels";
 import { unpricedFields } from "../llmDataTrust.utils";
+import type { TraceOutcome } from "../llmTraceOutcome";
+
+/**
+ * Session status from the list API (AIO-06): failed when any trace failed.
+ * Without `failed_trace_count` (stream lacks the columns) any errored span fails it.
+ */
+export function sessionOutcome(failedTraceCount: unknown, errorCount: number): TraceOutcome {
+  const failed =
+    failedTraceCount === undefined || failedTraceCount === null
+      ? errorCount
+      : Number(failedTraceCount) || 0;
+  if (failed > 0) return "failed";
+  return errorCount > 0 ? "recovered" : "ok";
+}
 
 export interface SessionDetail {
   sessionId: string;
@@ -139,12 +153,20 @@ export interface SessionRow {
   cacheReadSavings: number;
   netCacheImpact: number;
   errorCount: number;
-  /** Derived from error_count: any error span → "error", else "ok". */
-  status: "ok" | "error";
+  /**
+   * AIO-06: "failed" when any turn failed (root span or last LLM turn errored),
+   * "recovered" when it only has errors the agent got past, else "ok".
+   */
+  status: TraceOutcome;
   /** First user from the session's users array (may be empty string). */
   userId: string;
   /** First user message in the session (truncated server-side). */
   firstUserMessage: string;
+  /** Harness blocks the agent's patterns hid from it (AIO-22). */
+  harnessHidden: number;
+  /** The tag that hid a message that was only harness text. */
+  harnessOnly: string;
+  title: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,9 +320,12 @@ export function useSessions() {
           cacheReadSavings: Number(h.gen_ai_usage_cost_cache_read_savings) || 0,
           netCacheImpact: Number(h.gen_ai_usage_cost_net_cache_impact) || 0,
           errorCount,
-          status: errorCount > 0 ? "error" : "ok",
+          status: sessionOutcome(h.failed_trace_count, errorCount),
           userId: usersArr[0] || "",
           firstUserMessage: String(h.first_user_message || ""),
+          harnessHidden: Number(h.harness_hidden) || 0,
+          harnessOnly: h.harness_only ?? "",
+          title: h.session_title ?? "",
         };
       });
       total.value = Number(body.total) || 0;
@@ -397,6 +422,8 @@ export function useSessions() {
       const spansArr = Array.isArray(r.spans) ? r.spans : [];
       const spanCount = Number(spansArr[0]) || 0;
       const errorCount = Number(spansArr[1]) || 0;
+      // The turn failed by the AIO-06 rule; streams that cannot tell send no flag.
+      const failed = typeof r.failed === "boolean" ? r.failed : errorCount > 0;
       const svcArr = Array.isArray(r.service_name) ? r.service_name : [];
       const modelsArr: string[] = Array.isArray(r.models)
         ? r.models.map(String).filter(Boolean)
@@ -424,7 +451,7 @@ export function useSessions() {
         cacheReadSavings: Number(r.gen_ai_usage_cost_cache_read_savings) || 0,
         netCacheImpact: Number(r.gen_ai_usage_cost_net_cache_impact) || 0,
         errorCount,
-        status: errorCount > 0 ? "error" : "ok",
+        status: failed ? "error" : "ok",
         model: modelsArr[0] ?? null,
         models: modelsArr,
         turnUserMessage: userMessageOf(r.gen_ai_input_messages),
@@ -503,7 +530,7 @@ export function useSessions() {
       cacheReadSavings: totalCacheReadSavings,
       netCacheImpact: totalNetCacheImpact,
       errorCount: totalErrors,
-      status: totalErrors > 0 ? "error" : "ok",
+      status: traces.some((tr) => tr.status === "error") ? "error" : "ok",
     };
 
     return { detail, traces };
@@ -601,6 +628,24 @@ export function useSessions() {
   }
 
   /**
+   * The session's agent, for its harness patterns (AIO-22). A query of its own:
+   * a stream without agent mapping has no `gen_ai_agent_name`, and naming it in
+   * the spans query would fail that query. Null when there is none.
+   */
+  async function fetchSessionAgent(
+    streamName: string,
+    traceIds: string[],
+    startTime: number,
+    endTime: number,
+  ): Promise<string | null> {
+    if (!streamName || !traceIds.length || !startTime || !endTime) return null;
+    const inList = traceIds.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(",");
+    const sql = `SELECT MAX(gen_ai_agent_name) AS agent FROM "${streamName}" WHERE trace_id IN (${inList})`;
+    const hits = await executeQuery(sql, startTime, endTime).catch(() => null);
+    return hits?.[0]?.agent || null;
+  }
+
+  /**
    * Cancel in-flight SQL streams from `useLLMStreamQuery`. Called from the
    * parent on unmount so server-side turn-detail work isn't kept around after
    * the tab goes away.
@@ -631,6 +676,7 @@ export function useSessions() {
     fetchSession,
     fetchTurnDetail,
     fetchSessionSpans,
+    fetchSessionAgent,
     cancelAll: cancelAllSessionStreams,
   };
 }

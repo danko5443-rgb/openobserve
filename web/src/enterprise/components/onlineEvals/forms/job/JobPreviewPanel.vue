@@ -30,6 +30,17 @@
           {{ t(`onlineEvals.job.preview.scopes.${targetScope}.matchedSuffix`) }}
         </span>
       </div>
+      <!-- The Cost section's figure, repeated so it stays in view while editing (AIO-24). -->
+      <div
+        v-if="stream"
+        class="border-dialog-header-border mt-2.5 flex flex-col gap-0.5 border-t pt-2.5"
+        data-test="job-preview-daily-cost"
+      >
+        <span class="text-text-heading text-sm font-semibold tabular-nums">{{
+          dailyCostText
+        }}</span>
+        <span class="text-2xs text-text-secondary">{{ t("evalSpend.preview.note") }}</span>
+      </div>
     </section>
 
     <section class="border-dialog-header-border rounded-default mb-0 border px-4 py-3.5">
@@ -62,6 +73,7 @@ import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OTag from "@/lib/core/Badge/OTag.vue";
 import type { EvalTargetScope } from "@/services/online-evals.service";
 import { useJobMatchedTargets } from "../../composables/useJobMatchedTargets";
+import { formatUsd } from "../../utils/evalSpend";
 
 const props = defineProps<{
   name: string;
@@ -74,6 +86,9 @@ const props = defineProps<{
   filterWhere: string;
   /** False while a filter condition is half-filled — pauses the count query. */
   filterReady: boolean;
+  /** Estimated judge spend a day; null when it cannot be estimated. */
+  dailyCost?: number | null;
+  costLoading?: boolean;
 }>();
 
 const { t } = useI18nTyped();
@@ -88,6 +103,13 @@ const {
   toRef(props, "filterReady"),
   toRef(props, "targetScope"),
 );
+
+const dailyCostText = computed(() => {
+  if (props.costLoading) return t("evalSpend.preview.estimating");
+  return props.dailyCost == null
+    ? t("evalSpend.preview.cannot")
+    : t("evalSpend.preview.perDay", { amount: formatUsd(props.dailyCost) });
+});
 
 const formattedCount = computed(() =>
   matchedCount.value == null ? "—" : matchedCount.value.toLocaleString(),

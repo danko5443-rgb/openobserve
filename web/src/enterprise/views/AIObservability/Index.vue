@@ -35,7 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
     <section class="h-full min-h-0 min-w-0 overflow-y-auto">
       <OnlineEvalsDisabled v-if="onlineEvalsRouteOff" />
-      <router-view v-else />
+      <!-- Pages hand questions to the O2 AI panel (AIO-36 "Explain"); MainLayout listens here. -->
+      <router-view
+        v-else
+        @send-to-ai-chat="(...args: unknown[]) => emit('sendToAiChat', ...args)"
+      />
     </section>
   </OPageLayout>
 </template>
@@ -60,6 +64,8 @@ import {
   useOnlineEvalsRouteOff,
 } from "@/composables/shared/useOnlineEvalsGate";
 import OnlineEvalsDisabled from "@/components/OnlineEvalsDisabled.vue";
+
+const emit = defineEmits<{ (e: "sendToAiChat", ...args: unknown[]): void }>();
 
 /** The same mark the primary nav uses for this module, so the collapsed rail
  *  still says which module it belongs to. */

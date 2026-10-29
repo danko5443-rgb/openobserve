@@ -208,7 +208,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <span v-if="row.firstUserMessage" class="text-text-secondary text-xs">
           {{ row.firstUserMessage }}
         </span>
+        <!-- A message that was only harness text says so and names the tag (AIO-22). -->
+        <span v-else-if="row.harnessOnly" class="text-text-muted text-xs">
+          {{ t("readableSessions.onlyHarness", { tag: `<${row.harnessOnly}>` }) }}
+        </span>
         <span v-else class="text-text-muted text-xs">—</span>
+        <span
+          v-if="row.harnessHidden && row.firstUserMessage"
+          class="text-2xs text-text-muted block"
+          :data-test="`sessions-list-harness-hidden-${row.sessionId}`"
+        >
+          {{ t("readableSessions.hidden", { n: row.harnessHidden }, row.harnessHidden) }}
+        </span>
+      </template>
+
+      <template #cell-title="{ row }">
+        <span class="text-text-body text-xs font-medium">{{ row.title }}</span>
       </template>
 
       <!-- Turns -->
@@ -260,13 +275,52 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </template>
 
-      <!-- Status (derived from error_count) -->
+      <!-- Status (AIO-06): Failed when a turn failed; Recovered names its tool errors. -->
       <template #cell-status="{ row }">
-        <OTag
-          type="sessionStatus"
-          :value="row.status"
-          :data-test="`sessions-list-status-${row.sessionId}`"
-        />
+        <span class="inline-flex items-center gap-1.5">
+          <OTag
+            type="sessionStatus"
+            :value="row.status"
+            :data-test="`sessions-list-status-${row.sessionId}`"
+          />
+          <span v-if="row.status === 'recovered'" class="text-2xs text-text-secondary">
+            {{ t("llmTraceOutcome.toolErrors", { n: row.errorCount }, row.errorCount) }}
+          </span>
+        </span>
+      </template>
+
+      <!-- Feedback (AIO-40): a complaint outranks praise, with its comment. -->
+      <template #cell-feedback="{ row }">
+        <span
+          v-if="sessionFeedback[row.sessionId]?.notHelpful"
+          class="text-status-error-text inline-flex min-w-0 items-center gap-1 text-xs"
+          :data-test="`sessions-list-feedback-${row.sessionId}`"
+        >
+          <OIcon name="thumb-down-off-alt" size="xs" />
+          {{ t("endUserFeedback.notHelpful") }}
+          <span
+            v-if="sessionFeedback[row.sessionId].notHelpful > 1"
+            class="text-2xs tabular-nums"
+            >{{ sessionFeedback[row.sessionId].notHelpful }}</span
+          >
+          <span
+            v-if="sessionFeedback[row.sessionId].comment"
+            class="text-text-secondary truncate"
+            :title="sessionFeedback[row.sessionId].comment ?? undefined"
+            >{{
+              t("endUserFeedback.quoted", { comment: sessionFeedback[row.sessionId].comment ?? "" })
+            }}</span
+          >
+        </span>
+        <span
+          v-else-if="sessionFeedback[row.sessionId]?.helpful"
+          class="text-status-success-text inline-flex items-center gap-1 text-xs"
+          :data-test="`sessions-list-feedback-${row.sessionId}`"
+        >
+          <OIcon name="thumb-up-off-alt" size="xs" />
+          {{ t("endUserFeedback.helpfulVote") }}
+        </span>
+        <span v-else class="text-text-muted text-xs">{{ t("endUserFeedback.noVote") }}</span>
       </template>
     </OTable>
   </div>
@@ -311,6 +365,8 @@ import type { SessionSortField, SessionSortOrder } from "@/services/sessions";
 import { buildAgentSessionFilter } from "./llmAgentFilter";
 import { splitNumberWithUnit, splitDuration } from "./llmInsightsDashboard.utils";
 import LLMCostCell from "./LLMCostCell.vue";
+import OIcon from "@/lib/core/Icon/OIcon.vue";
+import { useSessionFeedback } from "./sessionFeedback";
 import AiScopeBar from "@/enterprise/components/AIObservability/AiScopeBar.vue";
 import { buildFeatureGateContext, checkFeatureAccess } from "@/utils/enterpriseFeatures";
 
@@ -355,6 +411,8 @@ const {
   fetchPage,
   cancelAll,
 } = useSessions();
+// End-user votes for this page's sessions (AIO-40), one `_llm_scores` query per page.
+const sessionFeedback = useSessionFeedback(sessions, () => props.startTime);
 
 const urlScope = readUrlScope(route.query);
 // Search deep-link: `?keyword=<term>`. Read once at setup, like the scope.
@@ -583,6 +641,20 @@ const tableColumns = computed(() =>
       hideable: true,
       meta: { align: "left" },
     },
+    // A Title column when the agent mapping turns session titles on (AIO-22).
+    ...(sessions.value.some((s) => s.title)
+      ? [
+          {
+            id: "title",
+            header: t("readableSessions.title"),
+            accessorKey: "title",
+            size: COL.name,
+            sortable: false,
+            hideable: true,
+            meta: { align: "left" as const },
+          },
+        ]
+      : []),
     {
       id: "firstUserMessage",
       header: t("traces.sessionsList.columns.firstMessage"),
@@ -644,6 +716,19 @@ const tableColumns = computed(() =>
       hideable: true,
       meta: { align: "left", disableCellAction: true },
     },
+    // A Feedback column once any session on the page has an end-user vote (AIO-40).
+    ...(Object.keys(sessionFeedback.value).length
+      ? [
+          {
+            id: "feedback",
+            header: t("endUserFeedback.column"),
+            size: 200,
+            sortable: false,
+            hideable: true,
+            meta: { align: "left" as const, disableCellAction: true },
+          },
+        ]
+      : []),
     {
       id: "lastSeenNanos",
       header: t("traces.sessionsList.columns.lastActivity"),
