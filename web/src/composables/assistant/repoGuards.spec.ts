@@ -53,6 +53,7 @@ const AUTO_AWESOME_CALL_SITES = [
   "lib/core/EmptyState/presets.ts",
   "lib/core/Icon/OIcon.icons.ts",
   "plugins/logs/SearchResult.vue",
+  "plugins/traces/LLMInsightsDashboard.vue",
   "views/Infrastructure/kubernetes2/K8sAttentionList.vue",
   "views/Infrastructure/kubernetes2/K8sDetailsDrawer.vue",
   "views/OverviewTab.vue",
