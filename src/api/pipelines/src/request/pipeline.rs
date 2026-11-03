@@ -53,7 +53,7 @@ use crate::{
     ),
     request_body(content = inline(Pipeline), description = "Pipeline data", content_type = "application/json"),
     responses(
-        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 200, description = "Success", content_type = "application/json", body = MetaHttpResponse),
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
@@ -362,7 +362,7 @@ pub async fn list_streams_with_pipeline(Path(org_id): Path<String>) -> Response 
         ("pipeline_id" = String, Path, description = "Pipeline ID"),
     ),
     responses(
-        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 200, description = "Success", content_type = "application/json", body = MetaHttpResponse),
         (status = 404, description = "NotFound", content_type = "application/json", body = ()),
     ),
     extensions(
@@ -473,7 +473,7 @@ pub async fn delete_pipeline_bulk(
     ),
     request_body(content = inline(Pipeline), description = "Pipeline data", content_type = "application/json"),
     responses(
-        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 200, description = "Success", content_type = "application/json", body = MetaHttpResponse),
         (status = 400, description = "Failure", content_type = "application/json", body = ()),
     ),
     extensions(
@@ -528,7 +528,7 @@ pub async fn update_pipeline(
         ("value" = bool, Query, description = "Enable or disable pipeline"),
     ),
     responses(
-        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 200, description = "Success", content_type = "application/json", body = MetaHttpResponse),
         (status = 404, description = "NotFound", content_type = "application/json", body = ()),
         (status = 500, description = "Failure",  content_type = "application/json", body = ()),
     ),
@@ -593,7 +593,7 @@ pub async fn enable_pipeline(
     ),
     request_body(content = inline(PipelineBulkEnableRequest), description = "Pipeline id list", content_type = "application/json"),
     responses(
-        (status = 200, description = "Success", content_type = "application/json", body = Object),
+        (status = 200, description = "Success", content_type = "application/json", body = PipelineBulkEnableResponse),
         (status = 404, description = "NotFound", content_type = "application/json", body = ()),
         (status = 500, description = "Failure",  content_type = "application/json", body = ()),
     ),
