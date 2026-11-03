@@ -2062,6 +2062,20 @@ export const BADGE_GROUPS = {
     },
     fallback: { variant: "default-soft" },
   },
+  // Workflow run status as the history API stores it; rendered as given, never derived from `error`.
+  hookRunStatus: {
+    mode: "dot",
+    shape: "pill",
+    values: {
+      queued: { variant: "warning-soft", labelKey: "workflow.history.statusQueued" },
+      running: { variant: "blue-soft", labelKey: "workflow.history.statusRunning" },
+      succeeded: { variant: "success-soft", labelKey: "workflow.history.success" },
+      failed: { variant: "error-soft", labelKey: "workflow.history.failed" },
+      expired: { variant: "default-soft", labelKey: "workflow.history.statusExpired" },
+    },
+    fallback: { variant: "default-soft" },
+  },
+
   // O2 Assistant context chips, keyed by chip state; the kind passes `label` and `icon` (`40` §2.2).
   assistantContext: {
     mode: "plain",

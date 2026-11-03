@@ -8432,6 +8432,7 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "time",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "tracing-opentelemetry",
