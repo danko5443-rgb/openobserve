@@ -14683,37 +14683,6 @@
     "errorUpdatingImage": "Error while updating image.",
     "fileFormatConstraint": "(Only .png, .jpg, .jpeg, .gif, .bmp formats & Max Size: 150x30px)",
     "filesValidationFailed": "{count} file did not pass validation constraints | {count} files did not pass validation constraints",
-    "genAiAgentMapping": {
-      "tabLabel": "GenAI Agent Mapping",
-      "title": "GenAI Agent Mapping",
-      "description": "Configure fallback telemetry attributes used to normalize agent identity for LLM traces and evaluations.",
-      "agentNameFields": "Agent name fallback fields",
-      "agentNameHelp": "Incoming attributes to use as fallbacks for gen_ai.agent.name.",
-      "agentNameInfo": "Checked only when the standard gen_ai.agent.name attribute is missing or empty. Add one incoming telemetry attribute per line.",
-      "agentIdFields": "Agent ID fallback fields",
-      "agentIdHelp": "Incoming attributes to use as fallbacks for gen_ai.agent.id.",
-      "agentIdInfo": "Checked only when the standard gen_ai.agent.id attribute is missing or empty. Add one incoming telemetry attribute per line.",
-      "envFields": "Environment fallback fields",
-      "envHelp": "Incoming attributes to use as the agent's environment.",
-      "envInfo": "Checked only when the standard deployment.environment.name attribute is missing or empty. Add one incoming telemetry attribute per line.",
-      "versionFields": "Version fallback fields",
-      "versionHelp": "Incoming attributes to use as the agent's version.",
-      "versionInfo": "Checked only when the standard gen_ai.agent.version attribute is missing or empty. Add one incoming telemetry attribute per line.",
-      "alwaysAppliedStandard": "Standard (checked first):",
-      "applyDefaults": "Apply defaults",
-      "resetToEmpty": "Reset to empty",
-      "clearRegistry": "Clear registry",
-      "clearRegistryTitle": "Clear agent registry?",
-      "clearRegistryDescription": "This deletes all discovered GenAI agent registry rows for this organization. New matching traces will repopulate the registry during ingestion.",
-      "clearRegistryConfirm": "Clear registry",
-      "saved": "GenAI agent mapping saved successfully",
-      "clearRegistrySuccess": "GenAI agent registry cleared. Deleted {deletedCount} stored agents and {bufferCount} queued observations.",
-      "loadFailed": "Failed to load GenAI agent mapping",
-      "saveFailed": "Failed to save GenAI agent mapping",
-      "clearRegistryFailed": "Failed to clear GenAI agent registry",
-      "defaultsLoadFailed": "Failed to load GenAI agent mapping defaults",
-      "defaultsFetchFailed": "Failed to fetch defaults ({status})"
-    },
     "correlation": {
       "identityConfigNoSets": "Configure at least one identity set before saving.",
       "discoveredServicesTab": "Discovered Services",
@@ -14819,9 +14788,6 @@
     "general": {
       "close": "Close",
       "fileCounterLabel": "{constraint} {filesNumber} file {'|'} {totalSize}"
-    },
-    "llmProvidersSettings": {
-      "subtitle": "LLM providers for online evaluations"
     },
     "modelPricingEditor": {
       "copySuffix": " (Copy)"
@@ -18114,7 +18080,7 @@
       "agentIdHint": "Agent ID: {ids}",
       "noAgentIdentity": "No agent identity found",
       "noAgentIdentityDescription": "These LLM spans carry no agent name, so they are shown by stream. Map the attribute that names your agent to view them by agent.",
-      "noAgentIdentityAction": "Open GenAI Agent Mapping"
+      "noAgentIdentityAction": "Open Agent Mapping"
     },
     "agentGraph": {
       "stream": "Stream",
@@ -19694,6 +19660,7 @@
   "llmProviders": {
     "tabLabel": "LLM Providers",
     "title": "LLM Providers",
+    "subtitle": "LLM providers for online evaluations",
     "newButton": "New Provider",
     "searchPlaceholder": "Search providers",
     "defaultBadge": "Default",
@@ -19708,6 +19675,37 @@
       "title": "No LLM Providers Yet",
       "description": "LLM Providers store the connection details (base URL + credentials) for the language models your LLM Judge scorers call. Add one to start running judge-based evaluations."
     }
+  },
+  "genAiAgentMapping": {
+    "tabLabel": "Agent Mapping",
+    "title": "Agent Mapping",
+    "subtitle": "How agent identity, cost attribution and session titles are read from telemetry",
+    "agentNameFields": "Agent name fallback fields",
+    "agentNameHelp": "Incoming attributes to use as fallbacks for gen_ai.agent.name.",
+    "agentNameInfo": "Checked only when the standard gen_ai.agent.name attribute is missing or empty. Add one incoming telemetry attribute per line.",
+    "agentIdFields": "Agent ID fallback fields",
+    "agentIdHelp": "Incoming attributes to use as fallbacks for gen_ai.agent.id.",
+    "agentIdInfo": "Checked only when the standard gen_ai.agent.id attribute is missing or empty. Add one incoming telemetry attribute per line.",
+    "envFields": "Environment fallback fields",
+    "envHelp": "Incoming attributes to use as the agent's environment.",
+    "envInfo": "Checked only when the standard deployment.environment.name attribute is missing or empty. Add one incoming telemetry attribute per line.",
+    "versionFields": "Version fallback fields",
+    "versionHelp": "Incoming attributes to use as the agent's version.",
+    "versionInfo": "Checked only when the standard gen_ai.agent.version attribute is missing or empty. Add one incoming telemetry attribute per line.",
+    "alwaysAppliedStandard": "Standard (checked first):",
+    "applyDefaults": "Apply defaults",
+    "resetToEmpty": "Reset to empty",
+    "clearRegistry": "Clear registry",
+    "clearRegistryTitle": "Clear agent registry?",
+    "clearRegistryDescription": "This deletes all discovered GenAI agent registry rows for this organization. New matching traces will repopulate the registry during ingestion.",
+    "clearRegistryConfirm": "Clear registry",
+    "saved": "Agent mapping saved",
+    "unsavedConfirm": "Your agent mapping changes are not saved. Discard them?",
+    "clearRegistrySuccess": "GenAI agent registry cleared. Deleted {deletedCount} stored agents and {bufferCount} queued observations.",
+    "saveFailed": "Failed to save agent mapping",
+    "clearRegistryFailed": "Failed to clear GenAI agent registry",
+    "defaultsLoadFailed": "Failed to load agent mapping defaults",
+    "defaultsFetchFailed": "Failed to fetch defaults ({status})"
   },
   "logs": {
     "noData": {
@@ -29541,7 +29539,7 @@
           "label": "Missing agent identity",
           "detail": "{affected} of {total} LLM spans ({pct}) have no gen_ai.agent.name, so agent views miss them.",
           "pass": "Every LLM span carries an agent name or id.",
-          "fix": "Open GenAI Agent Mapping"
+          "fix": "Open Agent Mapping"
         },
         "zero_duration_spans": {
           "label": "Zero-duration spans",

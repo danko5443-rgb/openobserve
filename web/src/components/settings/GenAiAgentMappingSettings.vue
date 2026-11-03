@@ -2,51 +2,44 @@
   <OPageLayout
     overflow-first
     data-test="gen-ai-agent-mapping-settings"
-    :subtitle="t('settings.genAiAgentMapping.description')"
-    icon="smart-toy"
+    :subtitle="t('genAiAgentMapping.subtitle')"
+    icon="account-tree"
     bleed
   >
     <template #title>
-      <span data-test="gen-ai-agent-mapping-page-title">{{
-        t("settings.genAiAgentMapping.title")
-      }}</span>
+      <span data-test="gen-ai-agent-mapping-page-title">{{ t("genAiAgentMapping.title") }}</span>
     </template>
-    <!-- Content helpers (populate / clear the fields) live in the header,
-           separate from the primary Save action at the bottom. -->
-    <template #actions-overflow>
-      <OButton
-        data-test="gen-ai-agent-mapping-apply-defaults-btn"
-        variant="outline"
-        size="sm"
-        :loading="loadingDefaults"
-        @click="applyDefaults"
-      >
-        {{ t("settings.genAiAgentMapping.applyDefaults") }}
-      </OButton>
-      <OButton
-        data-test="gen-ai-agent-mapping-reset-empty-btn"
-        variant="outline"
-        size="sm"
-        @click="resetToEmpty"
-      >
-        {{ t("settings.genAiAgentMapping.resetToEmpty") }}
-      </OButton>
-    </template>
+    <!-- Page-level action on the stored registry, not the form: it stays in
+         the header, like LLM Providers' "New Provider". -->
     <template #actions>
       <OButton
         data-test="gen-ai-agent-registry-clear-btn"
         variant="outline-destructive"
         size="sm"
         :loading="clearingRegistry"
-        :disabled="loading || loadingDefaults || saving"
+        :disabled="!loaded || loadingDefaults || saving"
         @click="openClearRegistryDialog"
       >
-        {{ t("settings.genAiAgentMapping.clearRegistry") }}
+        {{ t("genAiAgentMapping.clearRegistry") }}
       </OButton>
     </template>
 
     <div v-if="loading" class="flex flex-1 items-center justify-center">
       <OSpinner size="md" />
+    </div>
+
+    <div v-else-if="forbidden" class="flex flex-1 items-center justify-center">
+      <OEmptyState size="hero" preset="no-access" data-test="gen-ai-agent-mapping-forbidden" />
+    </div>
+
+    <!-- No form on a failed load: saving what an empty form holds would wipe the stored mapping. -->
+    <div v-else-if="loadError" class="flex flex-1 items-center justify-center">
+      <OEmptyState
+        size="hero"
+        preset="load-error"
+        data-test="gen-ai-agent-mapping-load-error"
+        @action="loadConfig()"
+      />
     </div>
 
     <template v-else>
@@ -56,15 +49,15 @@
           <div class="flex flex-col gap-2">
             <OTextarea
               v-model="agentNameText"
-              :label="t('settings.genAiAgentMapping.agentNameFields')"
-              :help-text="t('settings.genAiAgentMapping.agentNameHelp')"
+              :label="t('genAiAgentMapping.agentNameFields')"
+              :help-text="t('genAiAgentMapping.agentNameHelp')"
               :placeholder="raw('my.custom.agent_name\nteam.agent.label')"
               :rows="8"
               spellcheck="false"
               data-test="gen-ai-agent-name-fields-input"
             >
               <template #tooltip>
-                <OTooltip :content="t('settings.genAiAgentMapping.agentNameInfo')" />
+                <OTooltip :content="t('genAiAgentMapping.agentNameInfo')" />
               </template>
             </OTextarea>
             <BuiltinFields
@@ -75,15 +68,15 @@
           <div class="flex flex-col gap-2">
             <OTextarea
               v-model="agentIdText"
-              :label="t('settings.genAiAgentMapping.agentIdFields')"
-              :help-text="t('settings.genAiAgentMapping.agentIdHelp')"
+              :label="t('genAiAgentMapping.agentIdFields')"
+              :help-text="t('genAiAgentMapping.agentIdHelp')"
               :placeholder="raw('my.custom.agent_id\nteam.agent.uid')"
               :rows="8"
               spellcheck="false"
               data-test="gen-ai-agent-id-fields-input"
             >
               <template #tooltip>
-                <OTooltip :content="t('settings.genAiAgentMapping.agentIdInfo')" />
+                <OTooltip :content="t('genAiAgentMapping.agentIdInfo')" />
               </template>
             </OTextarea>
             <BuiltinFields
@@ -94,15 +87,15 @@
           <div class="flex flex-col gap-2">
             <OTextarea
               v-model="envFieldsText"
-              :label="t('settings.genAiAgentMapping.envFields')"
-              :help-text="t('settings.genAiAgentMapping.envHelp')"
+              :label="t('genAiAgentMapping.envFields')"
+              :help-text="t('genAiAgentMapping.envHelp')"
               :placeholder="raw('my.custom.env\ntier')"
               :rows="8"
               spellcheck="false"
               data-test="gen-ai-env-fields-input"
             >
               <template #tooltip>
-                <OTooltip :content="t('settings.genAiAgentMapping.envInfo')" />
+                <OTooltip :content="t('genAiAgentMapping.envInfo')" />
               </template>
             </OTextarea>
             <BuiltinFields :standard="BUILTIN_FIELDS.env.standard" data-test="gen-ai-env-builtin" />
@@ -110,15 +103,15 @@
           <div class="flex flex-col gap-2">
             <OTextarea
               v-model="versionFieldsText"
-              :label="t('settings.genAiAgentMapping.versionFields')"
-              :help-text="t('settings.genAiAgentMapping.versionHelp')"
+              :label="t('genAiAgentMapping.versionFields')"
+              :help-text="t('genAiAgentMapping.versionHelp')"
               :placeholder="raw('my.custom.version\nrelease.tag')"
               :rows="8"
               spellcheck="false"
               data-test="gen-ai-version-fields-input"
             >
               <template #tooltip>
-                <OTooltip :content="t('settings.genAiAgentMapping.versionInfo')" />
+                <OTooltip :content="t('genAiAgentMapping.versionInfo')" />
               </template>
             </OTextarea>
             <BuiltinFields
@@ -307,15 +300,33 @@
       </div>
 
       <!-- Sticky footer action bar (mirrors AddAlert): primary Save pinned at
-           the bottom-right while the body scrolls. -->
-      <div
-        class="border-border-default flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2.5"
-      >
+           the bottom-right while the body scrolls. The field helpers fill or
+           clear the form, so they sit with its Save, not in the page header. -->
+      <div class="border-border-default flex shrink-0 items-center gap-2 border-t px-4 py-2.5">
+        <OButton
+          data-test="gen-ai-agent-mapping-apply-defaults-btn"
+          variant="outline"
+          size="sm-action"
+          :loading="loadingDefaults"
+          @click="applyDefaults"
+        >
+          {{ t("genAiAgentMapping.applyDefaults") }}
+        </OButton>
+        <OButton
+          data-test="gen-ai-agent-mapping-reset-empty-btn"
+          variant="outline"
+          size="sm-action"
+          @click="resetToEmpty"
+        >
+          {{ t("genAiAgentMapping.resetToEmpty") }}
+        </OButton>
         <OButton
           data-test="gen-ai-agent-mapping-save-btn"
           variant="primary"
           size="sm-action"
+          class="ms-auto"
           :loading="saving"
+          :disabled="!isDirty"
           @click="saveConfig"
         >
           {{ t("common.save") }}
@@ -327,16 +338,16 @@
       v-model:open="clearRegistryDialogOpen"
       data-test="gen-ai-agent-registry-clear-dialog"
       size="sm"
-      :title="t('settings.genAiAgentMapping.clearRegistryTitle')"
+      :title="t('genAiAgentMapping.clearRegistryTitle')"
       :secondary-button-label="t('confirmDialog.cancel')"
-      :primary-button-label="t('settings.genAiAgentMapping.clearRegistryConfirm')"
+      :primary-button-label="t('genAiAgentMapping.clearRegistryConfirm')"
       primary-button-variant="destructive"
       :primary-button-loading="clearingRegistry"
       @click:secondary="clearRegistryDialogOpen = false"
       @click:primary="clearAgentRegistry"
     >
       <p class="text-text-body text-sm">
-        {{ t("settings.genAiAgentMapping.clearRegistryDescription") }}
+        {{ t("genAiAgentMapping.clearRegistryDescription") }}
       </p>
     </ODialog>
   </OPageLayout>
@@ -346,7 +357,9 @@
 import { computed, onBeforeMount, ref } from "vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 import { useStore } from "vuex";
+import { onBeforeRouteLeave } from "vue-router";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OEmptyState from "@/lib/core/EmptyState/OEmptyState.vue";
 import OSpinner from "@/lib/feedback/Spinner/OSpinner.vue";
 import OTextarea from "@/lib/forms/Input/OTextarea.vue";
 import OInput from "@/lib/forms/Input/OInput.vue";
@@ -370,6 +383,8 @@ import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
 import OPageLayout from "@/lib/core/PageLayout/OPageLayout.vue";
 import BuiltinFields from "@/components/settings/BuiltinFields.vue";
 import { toast } from "@/lib/feedback/Toast/useToast";
+import { useConfirmDialog } from "@/composables/useConfirmDialog";
+import { confirmForcedSignOutDiscard, draftSignOutForced } from "@/utils/drafts/draftSession";
 import genAiAgentMappingService, {
   fetchDefaultGenAiAgentMapping,
   type GenAiAgentMappingConfig,
@@ -382,6 +397,7 @@ import { useMutation } from "@tanstack/vue-query";
 
 const { t } = useI18nTyped();
 const store = useStore();
+const { confirm } = useConfirmDialog();
 
 // The standard-tier attribute the resolver ALWAYS checks first for each
 // dimension (current OTel / GenAI semconv), mirroring agent_registry.rs. Shown
@@ -397,6 +413,10 @@ const BUILTIN_FIELDS = {
 } as const;
 
 const loading = ref(false);
+// A 403 or a failed read: either way there is no stored mapping to edit.
+const forbidden = ref(false);
+const loadError = ref(false);
+const loaded = ref(false);
 const loadingDefaults = ref(false);
 const saving = ref(false);
 const clearingRegistry = ref(false);
@@ -608,6 +628,9 @@ const loadConfig = async () => {
   if (!orgId.value) return;
 
   loading.value = true;
+  forbidden.value = false;
+  loadError.value = false;
+  loaded.value = false;
   try {
     // Show what's actually IN EFFECT, seeded into the editable fields: the org's
     // saved fallbacks if it has customized them, otherwise the defaults — so a
@@ -625,12 +648,12 @@ const loadConfig = async () => {
     } else {
       setDraft(saved);
     }
-  } catch (error: any) {
-    toast({
-      variant: "error",
-      message: error?.message || t("settings.genAiAgentMapping.loadFailed"),
-    });
-    setDraft(genAiAgentMappingService.emptyConfig());
+    markSaved();
+    loaded.value = true;
+  } catch (error) {
+    const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+    if (status === 403) forbidden.value = true;
+    else loadError.value = true;
   } finally {
     loading.value = false;
   }
@@ -643,7 +666,7 @@ const applyDefaults = async () => {
   } catch (error: any) {
     toast({
       variant: "error",
-      message: error?.message || t("settings.genAiAgentMapping.defaultsLoadFailed"),
+      message: error?.message || t("genAiAgentMapping.defaultsLoadFailed"),
     });
   } finally {
     loadingDefaults.value = false;
@@ -670,7 +693,7 @@ const clearAgentRegistry = async () => {
     clearRegistryDialogOpen.value = false;
     toast({
       variant: "success",
-      message: t("settings.genAiAgentMapping.clearRegistrySuccess", {
+      message: t("genAiAgentMapping.clearRegistrySuccess", {
         deletedCount: result.deleted_count,
         bufferCount: result.cleared_buffer_count,
       }),
@@ -682,7 +705,7 @@ const clearAgentRegistry = async () => {
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
-        t("settings.genAiAgentMapping.clearRegistryFailed"),
+        t("genAiAgentMapping.clearRegistryFailed"),
     });
   } finally {
     clearingRegistry.value = false;
@@ -697,9 +720,10 @@ const saveConfig = async () => {
     const saved = await saveMapping.mutateAsync(draftConfig());
     setDraft(saved);
     setReadRules(saved);
+    markSaved();
     toast({
       variant: "success",
-      message: t("settings.genAiAgentMapping.saved"),
+      message: t("genAiAgentMapping.saved"),
     });
   } catch (error: any) {
     toast({
@@ -708,12 +732,31 @@ const saveConfig = async () => {
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
-        t("settings.genAiAgentMapping.saveFailed"),
+        t("genAiAgentMapping.saveFailed"),
     });
   } finally {
     saving.value = false;
   }
 };
+
+// Save, and leaving, compare the form with what was last read or saved — the
+// same rule as the other Settings forms (PasswordPolicy, CorrelationSettings).
+const savedConfig = ref("");
+const markSaved = () => {
+  savedConfig.value = JSON.stringify(draftConfig());
+};
+const isDirty = computed(() => loaded.value && JSON.stringify(draftConfig()) !== savedConfig.value);
+
+onBeforeRouteLeave(async () => {
+  if (!isDirty.value) return true;
+  if (draftSignOutForced.value) return confirmForcedSignOutDiscard(confirm, t);
+  return confirm({
+    title: t("common.unsavedChanges"),
+    message: t("genAiAgentMapping.unsavedConfirm"),
+    confirmLabel: t("common.discardChanges"),
+    cancelLabel: t("common.cancel"),
+  });
+});
 
 onBeforeMount(() => {
   loadConfig();

@@ -20,9 +20,7 @@
        users see the full detection order: this standard attribute, then their
        (seeded, editable) fallbacks. -->
   <div class="flex flex-wrap items-center gap-1.5 text-xs">
-    <span class="text-text-secondary">{{
-      t("settings.genAiAgentMapping.alwaysAppliedStandard")
-    }}</span>
+    <span class="text-text-secondary">{{ t("genAiAgentMapping.alwaysAppliedStandard") }}</span>
     <OBadge v-for="f in standard" :key="f" variant="primary-soft" size="sm">{{ f }}</OBadge>
   </div>
 </template>
