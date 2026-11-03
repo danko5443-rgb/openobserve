@@ -204,25 +204,6 @@ describe("ORefreshButton", () => {
       expect(tip.text()).toBe(`Last refreshed: ${new Date(ts).toLocaleTimeString()}`);
     });
 
-    it("names the button by its visible age from md up and by the exact time elsewhere", async () => {
-      const wrapper = mount(ORefreshButton, {
-        props: { layout: "inline", lastRunAt: null },
-        global: { stubs: { OButton: stubs.OButton }, plugins: [i18n] },
-        attachTo: document.body,
-      });
-      const name = () => wrapper.get("button span.sr-only");
-      expect(wrapper.get("button").attributes("aria-label")).toBeUndefined();
-      expect(name().text()).toBe("Not yet refreshed");
-      expect(name().classes()).not.toContain("md:hidden");
-      const ts = Date.now() - 10_000;
-      await wrapper.setProps({ lastRunAt: ts });
-      expect(wrapper.get("button").attributes("aria-label")).toBeUndefined();
-      expect(wrapper.get("button span.tabular-nums").text()).toBe("10s ago");
-      expect(name().text()).toBe(`Last refreshed: ${new Date(ts).toLocaleTimeString()}`);
-      expect(name().classes()).toContain("md:hidden");
-      wrapper.unmount();
-    });
-
     it("shows the exact time on hover and on focus of the whole button", async () => {
       const ts = Date.now() - 10_000;
       const wrapper = mount(ORefreshButton, {
@@ -233,7 +214,6 @@ describe("ORefreshButton", () => {
       const button = wrapper.get("button").element as HTMLElement;
       const bubble = () => document.body.querySelector('[data-test="o-tooltip-content"]');
       expect(button.hasAttribute("data-o-tooltip-trigger")).toBe(true);
-      expect(button.hasAttribute("aria-label")).toBe(false);
       button.dispatchEvent(new MouseEvent("mouseenter"));
       await vi.advanceTimersByTimeAsync(1_000);
       expect(bubble()?.textContent).toContain(

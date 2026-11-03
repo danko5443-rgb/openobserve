@@ -125,8 +125,6 @@ function handleClick(e: MouseEvent) {
     <span style="display: contents"
       ><OTooltip :content="exactTime" :shortcut-id="shortcutId"
     /></span>
-    <!-- The name wherever the age is not shown, so the button's name always matches its visible text. -->
-    <span :class="lastRunAt ? 'sr-only md:hidden' : 'sr-only'">{{ exactTime }}</span>
   </OButton>
 
   <div v-else class="inline-flex items-center gap-1.5">
