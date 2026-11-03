@@ -23,7 +23,6 @@ import { fakeAssistant, fakeRouter, fakeVuex } from "../__tests__/fakeAssistant"
 import { historyStubs } from "../__tests__/historyStubs";
 import AssistantLayoutMenu, { placementMode } from "./AssistantLayoutMenu.vue";
 import type { AssistantLayoutMenuProps } from "./AssistantLayoutMenu.vue";
-import { assistantWindowHostKey, type AssistantWindowHost } from "./assistantWindowHost";
 
 const { fake, lg, track } = vi.hoisted(() => ({
   fake: { current: null as any },
@@ -67,7 +66,7 @@ vi.mock("@/services/assistantAnalytics", async (importOriginal) => ({
 const ORIGIN = { entryKind: "header_button", objectKind: "none", container: "sidebar" } as const;
 
 // The bare menu renders its items inside whichever dropdown hosts it, so a spec opens one around it.
-async function setup(props: Partial<AssistantLayoutMenuProps>, windowHost?: AssistantWindowHost) {
+async function setup(props: Partial<AssistantLayoutMenuProps>) {
   const router = fakeRouter();
   await router.push("/logs");
   const wrapper = mount(
@@ -92,7 +91,6 @@ async function setup(props: Partial<AssistantLayoutMenuProps>, windowHost?: Assi
       global: {
         plugins: [router, fakeVuex()],
         stubs: { ODropdownSub: historyStubs.ODropdownSub },
-        provide: windowHost ? { [assistantWindowHostKey as symbol]: windowHost } : {},
       },
       attachTo: document.body,
     },
@@ -103,17 +101,6 @@ async function setup(props: Partial<AssistantLayoutMenuProps>, windowHost?: Assi
 
 const item = (name: string) =>
   document.body.querySelector<HTMLElement>(`[data-test="assistant-shell-place-${name}"]`);
-
-const anyTest = (name: string) => document.body.querySelector<HTMLElement>(`[data-test="${name}"]`);
-
-const windowHost = (): AssistantWindowHost => ({
-  otherCorners: () => ["top-start", "top-end", "bottom-start"],
-  moveTo: vi.fn(),
-  sizeLimited: (step) => step === "narrower",
-  stepSize: vi.fn(),
-  resetSize: vi.fn(),
-  startMode: vi.fn(),
-});
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -154,14 +141,13 @@ describe("Places", () => {
     });
   });
 
-  it("disables Floating window at the cap of 4 and names the limit", async () => {
+  it("disables Floating window at the cap of 4", async () => {
     const { store } = fake.current;
     const sid = store.state.shell.activeSid;
     for (let i = 0; i < 4; i += 1)
       store.floatChat(store.createSession({ origin: ORIGIN, detached: true }), { focus: "none" });
     await setup({ sid });
     expect(item("window")!.getAttribute("aria-disabled")).toBe("true");
-    expect(item("window")!.textContent).toContain("Limit is 4. Close one first.");
   });
 
   it("drops Floating window below lg, where windows do not exist", async () => {
@@ -187,6 +173,17 @@ describe("Places", () => {
     expect(item("full")).not.toBeNull();
   });
 
+  it("lists only the places, with no width, position or size groups", async () => {
+    await setup({});
+    const items = document.body.querySelectorAll('[role="menuitemradio"], [role="menuitem"]');
+    expect([...items].map((el) => el.getAttribute("data-test"))).toEqual([
+      "assistant-shell-place-sidebar",
+      "assistant-shell-place-window",
+      "assistant-shell-place-full",
+    ]);
+    expect(document.body.querySelector('[role="separator"]')).toBeNull();
+  });
+
   it("moves a window's chat to the full view by its own sid", async () => {
     const { store } = fake.current;
     const sid = store.state.shell.activeSid;
@@ -208,53 +205,6 @@ describe("Places", () => {
     await flushPromises();
     expect(store.windowOf(sid)).toBeNull();
     expect(store.state.shell.placement.kind).toBe("sidebar");
-  });
-});
-
-describe("Width submenu", () => {
-  it("shows on a desktop sidebar only", async () => {
-    await setup({});
-    expect(anyTest("assistant-shell-width-default")).not.toBeNull();
-    expect(anyTest("assistant-shell-width-expanded")).not.toBeNull();
-    document.body.innerHTML = "";
-    await setup({ placement: "full" });
-    expect(anyTest("assistant-shell-width-default")).toBeNull();
-  });
-
-  it("steps by 4 rem and keeps the menu open", async () => {
-    const { store } = fake.current;
-    store.setSidebarWidth(24);
-    await setup({});
-    anyTest("assistant-shell-width-narrower")!.click();
-    await flushPromises();
-    expect(store.state.shell.sidebarWidthRem).toBe(20);
-    expect(anyTest("assistant-shell-width-narrower")!.getAttribute("aria-disabled")).toBe("true");
-  });
-});
-
-describe("Position and Size", () => {
-  it("lists the other three corners and hands a pick to the window", async () => {
-    const host = windowHost();
-    const { store } = fake.current;
-    const sid = store.state.shell.activeSid;
-    store.floatChat(sid);
-    await setup({ placement: "window", sid }, host);
-    expect(anyTest("assistant-window-move-to-bottom-right")).toBeNull();
-    anyTest("assistant-window-move-to-top-left")!.click();
-    expect(host.moveTo).toHaveBeenCalledWith("top-start");
-  });
-
-  it("disables a step at the limit and hands the rest to the window", async () => {
-    const host = windowHost();
-    const { store } = fake.current;
-    const sid = store.state.shell.activeSid;
-    store.floatChat(sid);
-    await setup({ placement: "window", sid }, host);
-    expect(anyTest("assistant-window-narrower")!.getAttribute("aria-disabled")).toBe("true");
-    anyTest("assistant-window-wider")!.click();
-    expect(host.stepSize).toHaveBeenCalledWith("wider");
-    anyTest("assistant-window-move-keyboard")!.click();
-    expect(host.startMode).toHaveBeenCalledWith("move");
   });
 });
 

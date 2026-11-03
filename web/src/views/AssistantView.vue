@@ -22,11 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     :icon="view === 'shell' ? undefined : assistantGlyph.assistant"
     bleed
     title-data-test="assistant-view-title"
-    :sidebar-width="railPx(RAIL_REM)"
     :splitter-limits="[railPx(RAIL_MIN_REM), railPx(RAIL_MAX_REM)]"
     :resizable="view === 'shell'"
   >
-    <template v-if="view === 'shell'" #sidebar>
+    <template v-if="view === 'shell' && lgUp" #sidebar>
       <AssistantHistoryList
         mode="rail"
         :current-sid="store.state.shell.activeSid"
@@ -96,8 +95,7 @@ export function viewFor(gate: GateCode, isAdmin: boolean): AssistantViewState {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The rail's default and limits; the layout's splitter works in pixels of the root font size. */
-export const RAIL_REM = 17.5;
+/** The rail's limits around the layout's default width; the splitter works in pixels of the root font size. */
 export const RAIL_MIN_REM = 14;
 export const RAIL_MAX_REM = 24;
 
@@ -132,6 +130,7 @@ import AssistantShell, {
 import AssistantHistoryList from "@/components/ai-assistant/history/AssistantHistoryList.vue";
 import { takeLockedMove } from "@/components/ai-assistant/shell/lockedPanel";
 import { useAssistantCapability, useAssistantStore } from "@/composables/assistant";
+import useBreakpoint from "@/composables/useBreakpoint";
 import OPageLayout from "@/lib/core/PageLayout/OPageLayout.vue";
 import OSkeleton from "@/lib/feedback/Skeleton/OSkeleton.vue";
 import ODialog from "@/lib/overlay/Dialog/ODialog.vue";
@@ -145,6 +144,8 @@ const capability = useAssistantCapability();
 const route = useRoute();
 const router = useRouter();
 const vuex = useStore();
+// Below lg the rail would squeeze the chat; All chats in the title menu lists them instead.
+const { lgUp } = useBreakpoint();
 const routeState = ref<ShellRouteState>("idle");
 const learnOpen = ref(false);
 const shell = ref<InstanceType<typeof AssistantShell> | null>(null);

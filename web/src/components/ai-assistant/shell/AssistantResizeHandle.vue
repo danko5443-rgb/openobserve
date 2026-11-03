@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   >
     <span
       aria-hidden="true"
-      class="group-hover:bg-border-strong group-focus-visible:bg-focus-ring-accent group-data-[dragging]:bg-border-strong mx-auto block h-full w-0.5 bg-transparent group-focus-visible:w-1 motion-safe:transition-colors"
+      class="group-hover:bg-splitter-hover group-focus-visible:bg-splitter-hover group-data-[dragging]:bg-splitter-hover mx-auto block h-full w-px bg-transparent group-hover:w-0.5 group-focus-visible:w-1 group-data-[dragging]:w-0.5 motion-safe:transition-colors motion-safe:duration-300"
     />
   </div>
 </template>

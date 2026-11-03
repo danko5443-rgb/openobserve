@@ -117,8 +117,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       </ORadioGroup>
       <OButton
         v-if="share && share.mode === 'snapshot'"
-        variant="outline"
-        size="sm"
+        variant="ghost-primary"
+        size="xs"
         class="self-start max-md:min-h-11 pointer-coarse:min-h-11"
         :disabled="running || pending !== null"
         :focusable-unavailable="running"
@@ -142,12 +142,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         data-test="assistant-share-redact-tools"
         @update:model-value="onRedact"
       />
-      <div
+      <OCard
         v-if="confirm === 'showTools'"
-        ref="confirmEl"
+        ref="confirmCard"
+        variant="outlined"
         role="group"
         :aria-label="t('assistant.share.showToolsConfirm')"
-        class="border-border-default rounded-default flex flex-col gap-2 border p-3"
+        class="gap-2 p-3"
         data-test="assistant-share-show-tools-confirm"
       >
         <OText variant="body">{{ t("assistant.share.showToolsConfirm") }}</OText>
@@ -169,7 +170,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             >{{ t("common.cancel") }}</OButton
           >
         </div>
-      </div>
+      </OCard>
       <OCheckbox
         v-if="redactAttachments"
         :model-value="form.hideAttachments ?? true"
@@ -190,12 +191,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       @update:model-value="onExpiry"
     />
 
-    <div
+    <OCard
       v-if="confirm === 'revoke'"
-      ref="confirmEl"
+      ref="confirmCard"
+      variant="outlined"
       role="group"
       :aria-label="t('assistant.share.revokeConfirm')"
-      class="border-border-default rounded-default flex flex-col gap-2 border p-3"
+      class="gap-2 p-3"
       data-test="assistant-share-revoke-confirm"
     >
       <OText variant="body">{{ t("assistant.share.revokeConfirm") }}</OText>
@@ -218,7 +220,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           >{{ t("common.cancel") }}</OButton
         >
       </div>
-    </div>
+    </OCard>
 
     <OInput
       v-if="share && link"
@@ -347,6 +349,7 @@ import { useMutation } from "@tanstack/vue-query";
 
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OCard from "@/lib/core/Card/OCard.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OCheckbox from "@/lib/forms/Checkbox/OCheckbox.vue";
@@ -394,7 +397,8 @@ const { t } = useI18nTyped();
 const form = reactive<ShareForm>(formOf(props.share));
 const pending = ref<Pending>(null);
 const confirm = ref<"showTools" | "revoke" | null>(null);
-const confirmEl = ref<HTMLElement | null>(null);
+const confirmCard = ref<InstanceType<typeof OCard> | null>(null);
+const confirmEl = computed(() => (confirmCard.value?.$el as HTMLElement | undefined) ?? null);
 const copyButton = ref<ComponentPublicInstance | null>(null);
 const createButton = ref<ComponentPublicInstance | null>(null);
 const chosenExpiry = ref<number | null>(null);

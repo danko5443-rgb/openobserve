@@ -15,23 +15,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <template>
   <section
-    v-if="steps.length"
+    v-if="steps.length || $slots['line-end']"
     ref="root"
-    role="group"
-    :aria-label="lineText"
+    :role="steps.length ? 'group' : undefined"
+    :aria-label="steps.length ? lineText : undefined"
     class="flex min-w-0 flex-col gap-1"
     data-test="assistant-queries-group"
   >
-    <div class="text-text-secondary flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-5">
-      <OText v-if="hidden" variant="meta" as="p" data-test="assistant-trail-hidden">
+    <div
+      class="text-text-secondary flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5"
+    >
+      <OText v-if="hidden && steps.length" variant="meta" as="p" data-test="assistant-trail-hidden">
         {{ lineText }}
       </OText>
+      <!-- The doubled selector outranks OButton's own important offset, so the ring hugs the chip -->
       <OButton
-        v-else
+        v-else-if="steps.length"
         variant="ghost"
         size="chip"
         :aria-expanded="open ? 'true' : 'false'"
-        :class="['text-text-secondary -ms-1', TOUCH_TARGET_CLASS]"
+        :class="[
+          'text-text-secondary -ms-2 [&&:focus-visible]:outline-offset-0!',
+          TOUCH_TARGET_CLASS,
+        ]"
         data-test="assistant-queries-line"
         @click="open = !open"
       >
@@ -44,7 +50,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </OButton>
       <template v-if="widerOffer">
-        <span aria-hidden="true">·</span>
         <OButton
           variant="ghost-primary"
           size="chip"
@@ -58,6 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <template v-if="blocked" #unavailable-reason>{{ blocked }}</template>
         </OButton>
       </template>
+      <slot name="line-end" />
     </div>
     <div
       v-if="unavailable > 0"
@@ -81,90 +87,79 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </AssistantAskAdminPopover>
       </template>
     </div>
-    <ul v-if="open && !hidden" class="flex min-w-0 flex-col" data-test="assistant-queries-rows">
-      <li v-for="row in rows" :key="row.step.callId" class="min-w-0">
-        <OCollapsible
-          :model-value="expanded.includes(row.step.callId)"
-          :trigger-class="ROW_CLASS"
-          :data-test="`assistant-queries-row-${row.step.callId}`"
-          @update:model-value="(value: boolean) => toggle(row.step.callId, value)"
-        >
-          <template #trigger="{ open: rowOpen }">
-            <span
-              class="flex min-w-0 flex-1 items-center gap-2 text-xs"
-              :data-step-header="row.step.callId"
-            >
-              <span v-for="id in row.folded" :key="id" hidden :data-step-header="id" />
-              <span class="text-text-link w-3 shrink-0 text-start font-medium">
-                {{ row.step.n }}
-              </span>
-              <OTruncatedText
-                :class="[
-                  'min-w-0 text-start',
-                  row.mono ? 'font-mono' : '',
-                  row.step.state === 'failed' ? 'text-status-error-text' : 'text-text-body',
-                ]"
-                >{{ row.text }}</OTruncatedText
-              >
-              <OCode v-if="row.table" class="shrink-0">{{ row.table }}</OCode>
-              <span
-                v-if="row.count"
-                class="text-text-secondary shrink-0"
-                :data-test="`assistant-queries-count-${row.step.callId}`"
-              >
-                {{ row.count }}
-              </span>
-              <span class="flex-1" />
-              <OIcon
-                :name="rowOpen ? assistantGlyph.collapse : assistantGlyph.expand"
-                size="xs"
-                class="text-text-secondary shrink-0"
-                aria-hidden="true"
-              />
-            </span>
-          </template>
-          <div
-            class="flex min-w-0 flex-col gap-1 ps-5 pt-1 pb-2"
-            :data-test="`assistant-queries-body-${row.step.callId}`"
+    <div v-if="open && !hidden" class="flex min-w-0 flex-col" data-test="assistant-queries-rows">
+      <OText v-if="evaluated" variant="meta" as="p" data-test="assistant-queries-range">
+        {{ evaluated }}
+      </OText>
+      <ul class="flex min-w-0 flex-col">
+        <li v-for="row in rows" :key="row.step.callId" class="min-w-0">
+          <OCollapsible
+            v-if="expandable(row.step)"
+            :model-value="expanded.includes(row.step.callId)"
+            :trigger-class="ROW_CLASS"
+            :data-test="`assistant-queries-row-${row.step.callId}`"
+            @update:model-value="(value: boolean) => toggle(row.step.callId, value)"
           >
-            <OText v-if="row.step.error" variant="meta" as="p" class="break-words">
-              {{ raw(row.step.error) }}
-            </OText>
-            <OText v-if="row.step.suggestion" variant="meta" as="p" class="break-words">
-              {{ raw(row.step.suggestion) }}
-            </OText>
-            <AssistantQueryText
-              v-if="row.step.query"
-              :text="row.step.query.text"
-              :language="row.step.query.language"
-              :label="row.text"
-              :data-test="`assistant-queries-sql-${row.step.callId}`"
-            />
+            <template #trigger="{ open: rowOpen }">
+              <AssistantStepRowHead :row="row">
+                <OIcon
+                  :name="rowOpen ? assistantGlyph.collapse : assistantGlyph.expand"
+                  size="xs"
+                  class="text-text-secondary shrink-0"
+                  aria-hidden="true"
+                />
+              </AssistantStepRowHead>
+            </template>
             <div
-              v-if="row.step.query"
-              class="text-text-secondary flex min-w-0 flex-wrap items-center gap-x-2 text-xs"
+              class="flex min-w-0 flex-col gap-1 ps-5 pt-1 pb-2"
+              :data-test="`assistant-queries-body-${row.step.callId}`"
             >
-              <OButton
-                v-if="canOpen(row.step)"
-                variant="ghost-primary"
-                size="chip"
-                as="a"
-                :href="hrefOf(row.step)"
-                target="_blank"
-                rel="noopener noreferrer"
-                :icon-left="assistantGlyph.newTab"
-                :class="TOUCH_TARGET_CLASS"
-                :data-test="`assistant-queries-open-${row.step.callId}`"
-                @click="trackOpen"
+              <OText v-if="row.step.error" variant="meta" as="p" class="break-words">
+                {{ raw(row.step.error) }}
+              </OText>
+              <OText v-if="row.step.suggestion" variant="meta" as="p" class="break-words">
+                {{ raw(row.step.suggestion) }}
+              </OText>
+              <AssistantQueryText
+                v-if="row.step.query"
+                :text="row.step.query.text"
+                :language="row.step.query.language"
+                :label="row.text"
+                :data-test="`assistant-queries-sql-${row.step.callId}`"
+              />
+              <div
+                v-if="row.step.query"
+                class="text-text-secondary flex min-w-0 flex-wrap items-center gap-x-2 text-xs"
               >
-                {{ t("assistant.query.open", { explorer: explorerName(row.step) }) }}
-              </OButton>
-              <span v-if="row.step.range">{{ rangeText(row.step.range) }}</span>
+                <OButton
+                  v-if="canOpen(row.step)"
+                  variant="ghost-primary"
+                  size="chip"
+                  as="a"
+                  :href="hrefOf(row.step)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :icon-left="assistantGlyph.newTab"
+                  :class="TOUCH_TARGET_CLASS"
+                  :data-test="`assistant-queries-open-${row.step.callId}`"
+                  @click="trackOpen"
+                >
+                  {{ t("assistant.query.open", { explorer: explorerName(row.step) }) }}
+                </OButton>
+                <span v-if="row.step.range">{{ rangeText(row.step.range) }}</span>
+              </div>
             </div>
+          </OCollapsible>
+          <div
+            v-else
+            class="flex min-h-7 min-w-0 items-center max-md:min-h-11"
+            :data-test="`assistant-queries-row-${row.step.callId}`"
+          >
+            <AssistantStepRowHead :row="row" plain />
           </div>
-        </OCollapsible>
-      </li>
-    </ul>
+        </li>
+      </ul>
+    </div>
   </section>
 </template>
 
@@ -190,11 +185,9 @@ import {
   type StepFacts,
 } from "@/composables/assistant/pure";
 import OButton from "@/lib/core/Button/OButton.vue";
-import OCode from "@/lib/core/Code/OCode.vue";
 import OCollapsible from "@/lib/core/Collapsible/OCollapsible.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
-import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
 import { trackAssistant } from "@/services/assistantAnalytics";
 import type { ChatMessage } from "@/ts/interfaces/chat";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
@@ -202,6 +195,7 @@ import { explorerOf, explorerTarget } from "@/utils/assistant/explorerRoutes";
 import { formatCount } from "@/utils/formatters";
 
 import AssistantQueryText from "./AssistantQueryText.vue";
+import AssistantStepRowHead, { type StepRow } from "./AssistantStepRowHead.vue";
 import { clockRangeText, explorerLabel, queryFragments, rangeText, stepLine } from "./evidenceText";
 import { OPEN_STEP_EVENT } from "./revealStep";
 
@@ -239,20 +233,20 @@ const lineText = computed<I18nText>(() => {
   const count = trailRowCount(steps.value);
   if (hidden.value)
     return t("assistant.steps.hiddenByOwner", { count: steps.value.length }, steps.value.length);
-  const allQueries = queries.value === count;
-  if (!queries.value) return t("assistant.steps.summary", { count }, count);
+  return queries.value && queries.value === count
+    ? t("assistant.footer.queries", { count }, count)
+    : t("assistant.steps.summary", { count }, count);
+});
+
+// The windows the steps read sit inside the open trail, so the collapsed line stays a count.
+const evaluated = computed<I18nText | null>(() => {
   const windows = windowsOf(steps.value);
-  if (!windows.length)
-    return allQueries
-      ? t("assistant.footer.queries", { count }, count)
-      : t("assistant.steps.summary", { count }, count);
+  if (!windows.length) return null;
   const range = clockRangeText({
     from: Math.min(...windows.map((window) => window.from)),
     to: Math.max(...windows.map((window) => window.to)),
   });
-  return allQueries
-    ? t("assistant.evidence.line", { count, range }, count)
-    : t("assistant.evidence.stepsLine", { count, range }, count);
+  return t("assistant.footer.evaluated", { range });
 });
 
 const chatStream = computed(() => {
@@ -269,7 +263,7 @@ const fragments = computed(() => {
 });
 
 // Schema reads are groundwork, so all of them read as one row in the place of the first.
-const rows = computed(() => {
+const rows = computed<StepRow[]>(() => {
   const schemas = steps.value.filter((step) => step.kind === "schema" && step.state === "done");
   return steps.value.flatMap((step) => {
     if (schemas.length > 1 && schemas.includes(step))
@@ -323,7 +317,7 @@ const noAccessLine = computed<I18nText>(() => {
     : t("assistant.evidence.noAccessPlain", { n }, n);
 });
 
-function schemaRow(schemas: StepFacts[]) {
+function schemaRow(schemas: StepFacts[]): StepRow {
   const streams = schemas.map((step) => step.target ?? step.query?.stream ?? "").filter(Boolean);
   return {
     step: schemas[0],
@@ -333,6 +327,10 @@ function schemaRow(schemas: StepFacts[]) {
     table: null,
     count: null,
   };
+}
+
+function expandable(step: StepFacts): boolean {
+  return !!(step.query || step.error || step.suggestion);
 }
 
 function toggle(callId: string, value: boolean): void {

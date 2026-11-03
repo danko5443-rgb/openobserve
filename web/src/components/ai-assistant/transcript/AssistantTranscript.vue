@@ -57,7 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       :data-test="`assistant-turn-${turn.turnId}`"
       :data-turn-id="turn.turnId"
       :aria-label="turnName(turn)"
-      class="[&+article]:border-border-subtle flex min-w-0 flex-col gap-2 [&+article]:border-t [&+article]:pt-4"
+      class="[&+article]:border-border-subtle flex min-w-0 flex-col gap-3 [&+article]:border-t [&+article]:pt-4"
     >
       <div
         v-if="compactionOf(turn.user)"
@@ -98,35 +98,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :density="density"
         :range-label="rangeLabelOf(turn)"
       >
-        <template v-if="actionsFor(turn)" #actions>
-          <div
-            :class="['flex shrink-0', running ? 'invisible' : '']"
-            :inert="running || undefined"
-            data-test="assistant-prompt-actions"
-          >
-            <AssistantMessageActions
-              :sid="sid!"
-              :message="turn.user"
-              :turn-id="turn.turnId"
-              :is-last="turn.isLast"
-              :prompt-number="turn.userNumber"
-              :density="density"
-              @edit="editing = turn.turnId"
-            />
-          </div>
-        </template>
-        <template v-if="editing === turn.turnId && sid" #body>
-          <AssistantMessageActions
-            mode="editor"
-            :sid="sid"
-            :message="turn.user"
-            :turn-id="turn.turnId"
-            :is-last="turn.isLast"
-            :prompt-number="turn.userNumber"
-            :density="density"
-            @done="editing = null"
-          />
-        </template>
       </AssistantMessage>
       <article
         v-if="turn.answer || statusShown(turn)"
@@ -185,11 +156,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               :sid="sid!"
               :message="turn.answer"
               :prompt="turn.user"
-              :turn-id="turn.turnId"
               :is-last="turn.isLast"
               :can-regenerate="canRegenerate(turn)"
-              :prompt-number="turn.userNumber"
-              :density="density"
+              :fresh="freshRerunOf(turn)"
             />
           </template>
           <template v-if="followUpsOf(turn).length" #follow-ups>
@@ -260,8 +229,6 @@ export interface TranscriptTurn {
   turnId: string;
   /** 1-based position of the turn. */
   number: number;
-  /** 1-based number of the user message, for "Edited from message {n}". */
-  userNumber: number;
   user: ChatMessage | null;
   answer: ChatMessage | null;
   firstLine: string;
@@ -347,7 +314,7 @@ import {
 } from "vue";
 
 import { announceComposer, composerRowOf } from "@/components/ai-assistant/composer/composerUi";
-import { lastRangeText } from "@/components/ai-assistant/evidence/evidenceText";
+import { lastRangeText, rangeText } from "@/components/ai-assistant/evidence/evidenceText";
 import AssistantTurnOutcome, {
   type OutcomeAction,
 } from "@/components/ai-assistant/turn/AssistantTurnOutcome.vue";
@@ -358,15 +325,16 @@ import {
   agentStore,
   currentAgent,
   assistantEvidenceHostKey,
-  isStaleAnswer,
   assistantSessionSourceKey,
   assistantTranscriptHostKey,
+  isStaleAnswer,
   manualRouteOf,
   outcomeError,
   promptRange,
   stepsOf,
   turnAnnotationKey,
   useAssistantName,
+  windowsOf,
 } from "@/composables/assistant/pure";
 import { explorerOf } from "@/utils/assistant/explorerRoutes";
 import OButton from "@/lib/core/Button/OButton.vue";
@@ -381,7 +349,7 @@ import AssistantMessage from "./AssistantMessage.vue";
 import AssistantVersionPicker from "./AssistantVersionPicker.vue";
 import { useTranscriptScroll } from "./useTranscriptScroll";
 
-// The bar and the inline editor act on the store, so a readonly page never loads them (constraint 29).
+// The answer's buttons act on the store, so a readonly page never loads them (constraint 29).
 const AssistantMessageActions = defineAsyncComponent(() => import("./AssistantMessageActions.vue"));
 
 const AssistantFollowUps = defineAsyncComponent(() => import("./AssistantFollowUps.vue"));
@@ -409,7 +377,6 @@ const evidence = live ? inject(assistantEvidenceHostKey, null) : null;
 const pendingAnswer: ChatMessage = { role: "assistant", content: raw(""), contentBlocks: [] };
 
 const root = ref<HTMLElement | null>(null);
-const editing = ref<string | null>(null);
 const windowTurns = ref(WINDOW_TURNS);
 
 const sourceMessages = computed(() => (props.sid && source ? source(props.sid).value : []));
@@ -425,9 +392,7 @@ const metered = computed(() => agentStore()?.state.capability.edition === "cloud
 
 const turns = computed<TranscriptTurn[]>(() => {
   const groups = groupTurns(messages.value);
-  let userNumber = 0;
   return groups.map((group, index) => {
-    if (group.user) userNumber += 1;
     const isLast = index === groups.length - 1;
     const stored = answerOf(group.answers);
     const count = (stored?.versions?.length ?? 0) + (stored ? 1 : 0);
@@ -442,7 +407,6 @@ const turns = computed<TranscriptTurn[]>(() => {
     return {
       turnId: group.turnId,
       number: index + 1,
-      userNumber,
       user: group.user,
       answer,
       firstLine: prompt.split("\n")[0].slice(0, TURN_LABEL_CHARS),
@@ -522,11 +486,6 @@ function turnName(turn: TranscriptTurn): I18nText {
   return t("assistant.transcript.turnLabel", { n: turn.number, prompt: turn.firstLine });
 }
 
-// The bar is inert while any turn runs, and never renders on a readonly page (EB-09 AC 3, AC 7).
-function actionsFor(turn: TranscriptTurn): boolean {
-  return !!props.sid && !!live && !props.readonly && !!turn.user && editing.value !== turn.turnId;
-}
-
 // An answer with no text has nothing to copy, and a failed one acts only through its outcome block (`30` §8.3).
 function answerActionsFor(turn: TranscriptTurn): boolean {
   const text = turn.answer?.contentBlocks?.some(
@@ -544,9 +503,25 @@ function rangeLabelOf(turn: TranscriptTurn): I18nText | null {
 
 // A failed turn acts through its outcome block, and a stale one has Re-run as its one path to new data.
 function canRegenerate(turn: TranscriptTurn): boolean {
-  if (turn.outcomes.some((outcome) => outcome.record.kind === "failed")) return false;
+  return !turn.outcomes.some((outcome) => outcome.record.kind === "failed");
+}
+
+// An answer over data that has since moved on re-runs over its range ending now, not as a regenerate.
+function freshRerunOf(turn: TranscriptTurn): { turnId: string; range: I18nText | null } | null {
   const steps = stepsOf(turn.answer, session.value?.org ?? "");
-  return !(turn.isLast && !!turn.user && isStaleAnswer(steps, Date.now()));
+  if (!turn.isLast || !turn.user || !isStaleAnswer(steps, Date.now())) return null;
+  // The same window the rerun applier takes, so the tooltip names what the click asks for.
+  const window = windowsOf(steps)[0] ?? promptRange(turn.user, askedWindowOf(turn.turnId));
+  return { turnId: turn.turnId, range: window ? rerunRangeText(window) : null };
+}
+
+function rerunRangeText(window: { from: number; to: number }): I18nText {
+  const minutes = Math.round((window.to - window.from) / 60_000);
+  if (minutes < 1) return rangeText(window);
+  if (minutes % 1440 === 0)
+    return t("assistant.footer.theLastDays", { n: minutes / 1440 }, minutes / 1440);
+  if (minutes % 60 === 0) return t("assistant.footer.theLastHours", { n: minutes / 60 });
+  return t("assistant.footer.theLastMinutes", { n: minutes });
 }
 
 // At most three, and two under findings, which already fill the turn (the design's budget).
@@ -794,7 +769,6 @@ watch(
 watch(
   () => props.sid,
   () => {
-    editing.value = null;
     windowTurns.value = WINDOW_TURNS;
   },
 );

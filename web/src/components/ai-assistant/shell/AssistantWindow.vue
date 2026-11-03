@@ -25,10 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     :data-focused="focused ? '' : undefined"
     :data-collapsed="obscured === 'collapsed' ? '' : undefined"
     :class="[
-      'bg-surface-base rounded-surface fixed start-[calc(var(--o-window-x)*1rem)] top-[calc(var(--o-window-y)*1rem)] flex w-[calc(var(--o-window-w)*1rem)] flex-col border shadow-lg forced-colors:border-[CanvasText]',
-      focused
-        ? 'border-border-control z-5100 forced-colors:border-[Highlight]'
-        : 'border-border-default z-5000',
+      'bg-dialog-bg border-dialog-border rounded-surface fixed start-[calc(var(--o-window-x)*1rem)] top-[calc(var(--o-window-y)*1rem)] flex w-[calc(var(--o-window-w)*1rem)] flex-col border shadow-lg forced-colors:border-[CanvasText]',
+      focused ? 'z-5100 forced-colors:border-[Highlight]' : 'z-5000',
       obscured === 'collapsed' ? 'h-10 overflow-hidden' : 'h-[calc(var(--o-window-h)*1rem)]',
       obscured === 'hidden' ? 'invisible' : '',
     ]"
@@ -55,19 +53,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     >
       <template #chrome-start>
         <OButton
-          v-if="mode"
           ref="grip"
           variant="ghost"
           size="icon-sm"
           class="shrink-0 cursor-move"
           :aria-label="
-            t(mode === 'move' ? 'assistant.window.gripMove' : 'assistant.window.gripResize', {
+            t(mode === 'resize' ? 'assistant.window.gripResize' : 'assistant.window.gripMove', {
               title: raw(titleText),
             })
           "
-          :aria-describedby="hintId"
+          :aria-describedby="mode ? hintId : undefined"
           data-test="assistant-window-grip"
-          @click="endMode('keep', true)"
+          @click="endMode('keep')"
           @keydown="onGripKey"
           @blur="onGripBlur"
         >
@@ -134,7 +131,10 @@ const EDGE_CLASSES: Record<ResizeEdge, string> = {
 
 const KEY_STEP_REM = 1;
 
-const KEY_SHIFT_STEP_REM = 4;
+/** The page card's own gutter; a window never comes closer than this to any edge of the page. */
+const EDGE_GAP_REM = 0.5;
+
+const GRIP = "[data-test='assistant-window-grip']";
 
 const CONTROLS = "button, a, input, textarea, select, [role='button'], [role='menuitem']";
 
@@ -142,31 +142,22 @@ const CHROME = "[data-assistant-chrome]";
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, useId, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 
 import AssistantIconButton from "@/components/ai-assistant/common/AssistantIconButton.vue";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import {
-  WINDOW_DEFAULT_H_REM,
-  WINDOW_DEFAULT_W_REM,
-  WINDOW_MIN_H_REM,
-  WINDOW_MIN_W_REM,
   WINDOW_NARROW_REM,
-  WINDOW_STEP_REM,
-  atCorner,
   clampRect,
   dropTargetAt,
   geometryOf,
-  otherCorners,
   rectOf,
   registerEscapeRung,
   resizeRect,
-  sizeLimits,
   snapRect,
   useAssistantName,
   useAssistantStore,
   type DropTarget,
-  type WindowCorner,
   type WindowRect,
 } from "@/composables/assistant";
 import OButton from "@/lib/core/Button/OButton.vue";
@@ -176,12 +167,7 @@ import { trackAssistant } from "@/services/assistantAnalytics";
 import { raw, useI18nTyped } from "@/types/i18n";
 
 import AssistantShell from "./AssistantShell.vue";
-import {
-  assistantWindowHostKey,
-  tearOffRequest,
-  type WindowKeyboardMode,
-  type WindowSizeStep,
-} from "./assistantWindowHost";
+import { tearOffRequest, type WindowKeyboardMode } from "./assistantWindowHost";
 
 const props = withDefaults(defineProps<AssistantWindowProps>(), {
   obscured: null,
@@ -193,7 +179,7 @@ const emit = defineEmits<{
   close: [];
   pin: [];
   "drop-target": [target: DropTarget];
-  announce: [key: "windowPlaced" | "moveCancelled" | "wider" | "narrower" | "taller" | "shorter"];
+  announce: [key: "windowPlaced" | "moveCancelled"];
   "mode-started": [mode: WindowKeyboardMode];
 }>();
 
@@ -219,7 +205,22 @@ let dropTarget: DropTarget = null;
 const titleText = computed(() =>
   String(store.state.sessions[props.win.sid]?.title ?? t("assistant.thread.newChatTitle")),
 );
-const rect = computed(() => live.value ?? rectOf(props.win.geometry, props.area, props.bandRem));
+// The tray band already keeps its own gap, so the bottom inset applies only without it.
+const bounds = computed<PageArea>(() => {
+  const { start, end, top, bottom, viewport } = props.area;
+  return {
+    start: start + EDGE_GAP_REM,
+    end: end - EDGE_GAP_REM,
+    top: top + EDGE_GAP_REM,
+    bottom: props.bandRem > 0 ? bottom : bottom - EDGE_GAP_REM,
+    viewport,
+  };
+});
+const rect = computed(
+  () =>
+    live.value ??
+    clampRect(rectOf(props.win.geometry, props.area, props.bandRem), bounds.value, props.bandRem),
+);
 const narrow = computed(() => rect.value.w < WINDOW_NARROW_REM);
 
 function writeRect(): void {
@@ -251,7 +252,7 @@ function onPointerDown(event: PointerEvent): void {
     event.preventDefault();
     return startGesture(edge as ResizeEdge, event.pointerId, event.clientX, event.clientY);
   }
-  if (!target.closest(CHROME) || target.closest(CONTROLS)) return;
+  if (!target.closest(GRIP) && (!target.closest(CHROME) || target.closest(CONTROLS))) return;
   event.preventDefault();
   startGesture("drag", event.pointerId, event.clientX, event.clientY);
 }
@@ -261,13 +262,13 @@ function onPointerMove(event: PointerEvent): void {
   const dx = ((event.clientX - gesture.x) / 16) * direction();
   const dy = (event.clientY - gesture.y) / 16;
   if (gesture.kind === "drag") return dragTo(dx, dy, event);
-  live.value = resizeRect(gesture.start, gesture.kind, dx, dy, props.area, props.bandRem);
+  live.value = resizeRect(gesture.start, gesture.kind, dx, dy, bounds.value, props.bandRem);
 }
 
 function dragTo(dx: number, dy: number, event: PointerEvent): void {
   if (!gesture) return;
   const moved = { ...gesture.start, x: gesture.start.x + dx, y: gesture.start.y + dy };
-  live.value = clampRect(snapRect(moved, props.area, props.bandRem), props.area, props.bandRem);
+  live.value = clampRect(snapRect(moved, props.area, props.bandRem), bounds.value, props.bandRem);
   const x = direction() === 1 ? event.clientX / 16 : props.area.viewport - event.clientX / 16;
   const target = dropTargetAt(x, event.clientY / 16, props.area);
   if (target !== dropTarget) {
@@ -318,115 +319,67 @@ function place(next: WindowRect): void {
   store.setWindowGeometry(props.win.sid, geometryOf(next, props.area));
 }
 
-function stepRect(step: WindowSizeStep): WindowRect {
-  const current = rect.value;
-  const delta = step === "wider" || step === "taller" ? WINDOW_STEP_REM : -WINDOW_STEP_REM;
-  if (step === "wider" || step === "narrower") return { ...current, w: current.w + delta };
-  return { ...current, h: current.h + delta };
-}
-
-function sizeLimited(step: WindowSizeStep): boolean {
-  const { maxW, maxH } = sizeLimits(props.area);
-  const { w, h } = rect.value;
-  if (step === "wider") return w >= maxW;
-  if (step === "narrower") return w <= WINDOW_MIN_W_REM;
-  return step === "taller" ? h >= maxH : h <= WINDOW_MIN_H_REM;
-}
-
-// A step keeps the window's corner, so it grows and shrinks away from where it is parked.
-function stepSize(step: WindowSizeStep): void {
-  const current = props.win.geometry;
-  const next = stepRect(step);
-  const { maxW, maxH } = sizeLimits(props.area);
-  store.setWindowGeometry(props.win.sid, {
-    ...current,
-    wRem: Math.min(Math.max(next.w, WINDOW_MIN_W_REM), maxW),
-    hRem: Math.min(Math.max(next.h, WINDOW_MIN_H_REM), maxH),
-  });
-  emit("announce", step);
-}
-
-function moveToCorner(corner: WindowCorner): void {
-  store.setWindowGeometry(props.win.sid, atCorner(props.win.geometry, corner));
-  trackAssistant("ai_window_moved", { snap: "corner" });
-}
-
-function resetSize(): void {
-  store.setWindowGeometry(props.win.sid, {
-    ...props.win.geometry,
-    wRem: WINDOW_DEFAULT_W_REM,
-    hRem: WINDOW_DEFAULT_H_REM,
-  });
+// Switching between move and resize keeps the first saved rect, so Escape undoes the whole session.
+function beginMode(next: WindowKeyboardMode): void {
+  if (mode.value === next) return;
+  if (!mode.value) before.value = rect.value;
+  mode.value = next;
+  emit("mode-started", next);
 }
 
 async function startMode(next: WindowKeyboardMode): Promise<void> {
-  before.value = rect.value;
-  mode.value = next;
-  emit("mode-started", next);
-  // The menu hands focus back to its trigger as it closes; the grip takes it after that.
+  beginMode(next);
   await nextTick();
-  setTimeout(() => (grip.value?.$el as HTMLElement | undefined)?.focus(), 0);
+  (grip.value?.$el as HTMLElement | undefined)?.focus();
 }
 
-function focusLayout(): void {
-  const selector = narrow.value
-    ? '[data-test="assistant-thread-title-button"]'
-    : '[data-test="assistant-layout-button"]';
-  root.value?.querySelector<HTMLElement>(selector)?.focus();
-}
-
-function endMode(outcome: "keep" | "restore", refocus: boolean): void {
+function endMode(outcome: "keep" | "restore"): void {
   if (!mode.value) return;
   const saved = before.value;
   mode.value = null;
   before.value = null;
   if (outcome === "restore" && saved) place(saved);
   emit("announce", outcome === "restore" ? "moveCancelled" : "windowPlaced");
-  if (refocus) void nextTick(focusLayout);
 }
 
 function onGripBlur(): void {
-  endMode("keep", false);
+  endMode("keep");
 }
 
 function keyDelta(event: KeyboardEvent): { dx: number; dy: number } | null {
-  const step = mode.value === "move" && event.shiftKey ? KEY_SHIFT_STEP_REM : KEY_STEP_REM;
-  const start = direction() * step;
+  const start = direction() * KEY_STEP_REM;
   if (event.key === "ArrowLeft") return { dx: -start, dy: 0 };
   if (event.key === "ArrowRight") return { dx: start, dy: 0 };
-  if (event.key === "ArrowUp") return { dx: 0, dy: -step };
-  return event.key === "ArrowDown" ? { dx: 0, dy: step } : null;
+  if (event.key === "ArrowUp") return { dx: 0, dy: -KEY_STEP_REM };
+  return event.key === "ArrowDown" ? { dx: 0, dy: KEY_STEP_REM } : null;
 }
 
 function onGripKey(event: KeyboardEvent): void {
   if (event.key === "Enter") {
     event.preventDefault();
-    return endMode("keep", true);
+    return endMode("keep");
   }
   const delta = keyDelta(event);
   if (!delta) return;
   event.preventDefault();
+  beginMode(event.shiftKey ? "resize" : "move");
   const current = rect.value;
+  // A resize grows from the far corner and stops at the page's edge instead of pushing the window back.
   const next =
     mode.value === "move"
-      ? { ...current, x: current.x + delta.dx, y: current.y + delta.dy }
-      : { ...current, w: current.w + delta.dx, h: current.h + delta.dy };
-  place(clampRect(next, props.area, props.bandRem));
+      ? clampRect(
+          { ...current, x: current.x + delta.dx, y: current.y + delta.dy },
+          bounds.value,
+          props.bandRem,
+        )
+      : resizeRect(current, "se", delta.dx, delta.dy, bounds.value, props.bandRem);
+  place(next);
 }
-
-provide(assistantWindowHostKey, {
-  otherCorners: () => otherCorners(props.win.geometry.corner),
-  moveTo: moveToCorner,
-  sizeLimited,
-  stepSize,
-  resetSize,
-  startMode: (next) => void startMode(next),
-});
 
 const unregisterRung = registerEscapeRung("e", (event) => {
   const from = event.target instanceof Node ? event.target : document.activeElement;
   if (!mode.value || !root.value?.contains(from)) return false;
-  endMode("restore", true);
+  endMode("restore");
   return true;
 });
 
@@ -445,5 +398,5 @@ onBeforeUnmount(() => {
   endGesture();
 });
 
-defineExpose({ startMode, stepSize, moveToCorner });
+defineExpose({ startMode });
 </script>

@@ -23,6 +23,7 @@ import { raw } from "@/types/i18n";
 
 import { createAssistantStore, inertAssistantDeps } from "./assistantStore";
 import { wireContextOf } from "./context/serialize";
+import { refreshPageContext, resetAssistantContextForTests } from "./context/useAssistantContext";
 import { starterPayload } from "./starterPayload";
 import type { AssistantCapability, AssistantHostAdapter } from "./assistantStore.types";
 import type { PageContext } from "./context/types";
@@ -35,7 +36,7 @@ const { runtime, getActiveContext } = vi.hoisted(() => ({
 
 vi.mock("./runtime", () => ({ getAssistantRuntime: () => runtime.current }));
 vi.mock("@/composables/contextProviders/registry", () => ({
-  contextRegistry: { getActiveContext },
+  contextRegistry: { getActiveContext, version: { value: 0 } },
 }));
 
 const LOGS_CONTEXT: PageContext = {
@@ -91,11 +92,22 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetAssistantContextForTests();
   queryClient.clear();
   getActiveContext.mockReset();
 });
 
 describe("useAssistantStarters", () => {
+  it("follows the stream the composer's tray reads after the page changes it", async () => {
+    seedStreams("logs", ["default", "app_logs"]);
+    const { starters } = setup("logs");
+    await flushPromises();
+    getActiveContext.mockResolvedValue({ ...LOGS_CONTEXT, selectedStreams: ["app_logs"] });
+    refreshPageContext();
+    await flushPromises();
+    expect(labels(starters)[0]).toBe("Why did errors spike in `app_logs` in the last 15 min?");
+  });
+
   it("grounds the Logs starters in the selected stream and range, then learn", async () => {
     seedStreams("logs", ["default", "k8s"]);
     const { starters, loading } = setup("logs");

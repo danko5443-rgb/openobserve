@@ -17,21 +17,13 @@ import { type CapabilityAgent } from "@/composables/assistant";
 import { agentPolicy, agentPurpose, DEFAULT_AGENT } from "@/composables/assistant/pure";
 import type { I18nText, TranslateFn } from "@/types/i18n";
 
-/** "Finds causes · Read-only"; the default agent has no purpose line of its own. */
-export function agentClause(agent: CapabilityAgent | undefined, t: TranslateFn): I18nText {
-  const policy = agentPolicy(agent, t);
-  if (!agent || agent.id === DEFAULT_AGENT) return policy;
-  return t("assistant.agent.clause", { purpose: agentPurpose(agent.id, t), policy });
-}
-
 /** The policy every agent of the roster shares, said once for the list instead of on each row. */
 export function sharedAgentPolicy(
   agents: CapabilityAgent[] | null | undefined,
   t: TranslateFn,
 ): I18nText | null {
   if (!agents || agents.length < 2) return null;
-  const policies = new Set(agents.map((agent) => String(agentPolicy(agent, t))));
-  return policies.size === 1 ? agentPolicy(agents[0], t) : null;
+  return agents.every((agent) => agent.readOnly) ? agentPolicy(agents[0], t) : null;
 }
 
 /** A row's line under a shared policy: the purpose alone, and nothing for the default agent. */
@@ -42,4 +34,12 @@ export function agentRowClause(
 ): I18nText | null {
   if (!shared) return agentClause(agent, t);
   return agent.id === DEFAULT_AGENT ? null : agentPurpose(agent.id, t);
+}
+
+// Only a read-only agent carries a policy word; the rest show their purpose alone.
+function agentClause(agent: CapabilityAgent, t: TranslateFn): I18nText | null {
+  const policy = agentPolicy(agent, t);
+  if (agent.id === DEFAULT_AGENT) return policy;
+  const purpose = agentPurpose(agent.id, t);
+  return policy ? t("assistant.agent.clause", { purpose, policy }) : purpose;
 }

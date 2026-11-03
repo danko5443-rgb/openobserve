@@ -144,13 +144,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           class="bg-surface-chrome-deeper flex min-h-0 min-w-0 flex-1 flex-col outline-none"
           :class="store.state.kioskMode ? '' : 'pe-2 pb-2 max-md:pe-0'"
         >
-          <div
-            class="bg-surface-base flex min-h-0 flex-1 flex-col overflow-hidden"
-            :class="[
-              store.state.kioskMode ? '' : 'rounded-surface border shadow-md',
-              isDark ? 'border-border-default' : 'border-transparent',
-            ]"
-          >
+          <div :class="pageCardClasses(!!store.state.kioskMode, isDark)">
             <div
               v-if="isLoading"
               :key="store.state.selectedOrganization?.identifier"
@@ -194,15 +188,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   : '75%',
           }"
         >
-          <!-- Content card — all pages render inside this. The border stays present in both
-               themes (transparent in light) so toggling dark mode can't shift page content by 1px. -->
-          <div
-            class="bg-surface-base flex min-h-0 flex-1 flex-col overflow-hidden"
-            :class="[
-              store.state.kioskMode ? '' : 'rounded-surface border shadow-md',
-              isDark ? 'border-border-default' : 'border-transparent',
-            ]"
-          >
+          <div :class="pageCardClasses(!!store.state.kioskMode, isDark)">
             <div
               v-if="isLoading && fullConfigSettled"
               :key="store.state.selectedOrganization?.identifier"
@@ -351,6 +337,7 @@ import {
 } from "vue";
 import { useStore } from "vuex";
 import { useTheme } from "@/composables/useTheme";
+import { pageCardClasses } from "@/layouts/pageCard";
 import { useRouter, RouterView } from "vue-router";
 import config from "../aws-exports";
 
@@ -1855,6 +1842,7 @@ export default defineComponent({
       assistantV2,
       canBill,
       ASSISTANT_INSET_CLASSES,
+      pageCardClasses,
       isDark,
       t,
       raw,

@@ -19,8 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     variant="ghost"
     size="sm"
     block
-    role="menuitemradio"
+    role="radio"
     :aria-checked="selected"
+    :tabindex="tabbable ? 0 : -1"
     :class="[
       'h-8! justify-start! gap-2 px-2! text-start max-md:h-11! pointer-coarse:h-11!',
       selected ? 'bg-dropdown-item-hover-bg' : '',
@@ -39,7 +40,13 @@ import OButton from "@/lib/core/Button/OButton.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import type { I18nText } from "@/types/i18n";
 
-defineProps<{ label: I18nText; meta?: I18nText; selected?: boolean }>();
+defineProps<{
+  label: I18nText;
+  meta?: I18nText;
+  selected?: boolean;
+  /** The one row of its radiogroup that Tab reaches. */
+  tabbable?: boolean;
+}>();
 
 const emit = defineEmits<{ (e: "click"): void }>();
 </script>

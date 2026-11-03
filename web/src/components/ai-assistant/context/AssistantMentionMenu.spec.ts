@@ -136,36 +136,43 @@ describe("AssistantMentionMenu: Agents group (MULTI-AGENT-02)", () => {
 
   it("says a policy every agent shares once in the header, with each purpose under its name", async () => {
     withAgents([
-      { id: "o2-ai", pickable: true, available: true },
-      { id: "sre", pickable: true, available: true },
-      { id: "generate-query", pickable: true, available: true },
+      { id: "o2-ai", pickable: true, available: true, readOnly: true },
+      { id: "sre", pickable: true, available: true, readOnly: true },
+      { id: "generate-query", pickable: true, available: true, readOnly: true },
     ]);
     const { wrapper } = await open();
     const group = wrapper.get('[data-test="assistant-mention-group-agents"]');
     const note = group.get('[data-test="assistant-mention-group-note"]');
-    expect(note.text()).toBe("Asks before changing anything");
+    expect(note.text()).toBe("Read-only");
     expect(group.attributes("aria-describedby")).toBe(note.attributes("id"));
     expect(group.find('[data-test="assistant-mention-group-count"]').exists()).toBe(false);
     const clauses = group
       .findAll('[data-test="assistant-mention-agent-clause"]')
       .map((c) => c.text());
     expect(clauses).toHaveLength(2);
-    expect(clauses.some((c) => c.includes("Asks before"))).toBe(false);
+    expect(clauses.some((c) => c.includes("Read-only"))).toBe(false);
   });
 
-  it("renders no group for one agent, without a roster, or in the + menu", async () => {
+  it("never words a policy for agents that are not read-only", async () => {
+    withAgents([
+      { id: "o2-ai", pickable: true, available: true },
+      { id: "sre", pickable: true, available: true },
+    ]);
+    const { wrapper } = await open();
+    const group = wrapper.get('[data-test="assistant-mention-group-agents"]');
+    expect(group.find('[data-test="assistant-mention-group-note"]').exists()).toBe(false);
+    expect(
+      group.findAll('[data-test="assistant-mention-agent-clause"]').map((c) => c.text()),
+    ).toEqual(["Finds causes"]);
+  });
+
+  it("renders no group for one agent or without a roster", async () => {
     withAgents([ROSTER[0]]);
     const one = await open();
     expect(one.wrapper.find('[data-test="assistant-mention-group-agents"]').exists()).toBe(false);
     fake.current = fakeAssistant("available");
     const none = await open();
     expect(none.wrapper.find('[data-test="assistant-mention-group-agents"]').exists()).toBe(false);
-    withAgents();
-    const plus = mount(AssistantMentionMenu, {
-      props: { open: true, query: "", org: ORG, listboxId: "lb", inline: true },
-    });
-    await flushPromises();
-    expect(plus.find('[data-test="assistant-mention-group-agents"]').exists()).toBe(false);
   });
 
   it("hands a pick to the composer, sets the agent and speaks once, with no chip", async () => {
@@ -218,17 +225,31 @@ describe("AssistantMentionMenu", () => {
     expect(streamLabels()).toEqual([]);
   });
 
-  it("adds an Image row for the + menu and hands it over like an option", async () => {
-    seed();
-    const wrapper = mount(AssistantMentionMenu, {
-      props: { open: true, query: "", org: ORG, listboxId: "lb", inline: true, withImage: true },
-      attachTo: document.body,
+  it("scrolls the active row into view as the arrows move it", async () => {
+    const { wrapper, options } = await open();
+    const scrolled: string[] = [];
+    HTMLElement.prototype.scrollIntoView ??= () => {};
+    const spy = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (
+      this: HTMLElement,
+      arg?: boolean | ScrollIntoViewOptions,
+    ) {
+      expect(arg).toEqual({ block: "nearest" });
+      scrolled.push(this.id);
     });
+    wrapper.vm.move(1);
     await flushPromises();
-    const image = wrapper.get('[data-test="assistant-mention-image"]');
-    expect(wrapper.get('[data-test="assistant-mention-panel"]').classes()).not.toContain("border");
-    await image.trigger("click");
-    expect(wrapper.emitted("select")?.[0]?.[0]).toMatchObject({ action: "image" });
+    expect(scrolled.at(-1)).toBe(options()[1].id);
+    wrapper.vm.move(-2);
+    await flushPromises();
+    expect(scrolled.at(-1)).toBe(wrapper.vm.activeId);
+    HTMLElement.prototype.scrollTo ??= () => {};
+    const top = vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(() => {});
+    wrapper.vm.move(1);
+    await flushPromises();
+    expect(top).toHaveBeenCalledWith({ top: 0 });
+    expect(top.mock.contexts[0]).toBe(wrapper.get('[data-test="assistant-mention-panel"]').element);
+    top.mockRestore();
+    spy.mockRestore();
   });
 
   it("lists the groups as a listbox with the first option active, and no time group (CT-05 AC 1, 9)", async () => {

@@ -14,7 +14,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 <template>
-  <div class="-ms-1.5 flex min-w-0 flex-col" data-test="assistant-follow-ups">
+  <div class="-ms-3 flex min-w-0 flex-col" data-test="assistant-follow-ups">
     <OButton
       v-for="item in items"
       :key="item"

@@ -35,7 +35,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     <span :id="titleId" class="min-w-0 break-words" data-test="assistant-turn-outcome-title">
       {{ title }}
     </span>
-    <template v-if="action">
+    <AssistantIconButton
+      v-if="rerunIcon"
+      :label="actionLabel"
+      :icon="assistantGlyph.regenerate"
+      :disabled="unavailable"
+      :disabled-reason="unavailableReason"
+      :aria-describedby="disabledReason ? undefined : titleId"
+      data-test="assistant-turn-outcome-action"
+      @click="emit('action', action!)"
+    />
+    <template v-else-if="action">
       <span aria-hidden="true">·</span>
       <OButton
         variant="ghost-primary"
@@ -74,7 +84,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <div
         :class="[
           'flex min-w-0 gap-x-3 gap-y-1.5',
-          framed ? 'items-start @max-[28rem]:flex-col' : 'items-center',
+          framed ? ['items-start', !rerunIcon && '@max-[28rem]:flex-col'] : 'items-center',
         ]"
       >
         <OIcon
@@ -120,7 +130,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           :at="at ?? now()"
           :is-admin="role === 'admin'"
         />
-        <div v-if="action" :class="['flex shrink-0', framed && '@max-[28rem]:w-full']">
+        <div
+          v-if="action"
+          :class="['flex shrink-0', framed && !rerunIcon && '@max-[28rem]:w-full']"
+        >
           <AssistantAskAdminPopover
             v-if="action === 'ask_admin'"
             :kind="askKind"
@@ -158,6 +171,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             <span class="sr-only">{{ t("assistant.docs.opensInNewTab") }}</span>
             <template #icon-right><OIcon :name="newTabIcon" size="xs" /></template>
           </OButton>
+          <AssistantIconButton
+            v-else-if="rerunIcon"
+            :label="actionLabel"
+            :icon="assistantGlyph.regenerate"
+            :variant="framed ? 'outline' : 'ghost'"
+            :disabled="unavailable"
+            :disabled-reason="unavailableReason"
+            :aria-describedby="disabledReason ? undefined : titleId"
+            data-test="assistant-turn-outcome-action"
+            @click="emit('action', action!)"
+          />
           <OButton
             v-else
             :variant="actionVariant"
@@ -406,6 +430,7 @@ import { useRouter } from "vue-router";
 
 import { assistantApprovalsHostKey } from "@/components/ai-assistant/approvals/approvals.types";
 import AssistantErrorDetails from "@/components/ai-assistant/common/AssistantErrorDetails.vue";
+import AssistantIconButton from "@/components/ai-assistant/common/AssistantIconButton.vue";
 import { billingHrefOf } from "@/components/ai-assistant/credits/AssistantCreditManage.vue";
 import { explorerLabel } from "@/components/ai-assistant/evidence/evidenceText";
 import {
@@ -639,6 +664,12 @@ const disabledReason = computed<I18nText | null>(() => {
 
 // While counting down the label itself says why, so the button needs no separate reason.
 const unavailable = computed(() => !!disabledReason.value || countingDown.value);
+
+// A re-run is an icon, so a countdown that the label would have shown moves into its tooltip.
+const rerunIcon = computed(() => RETRYING.has(action.value ?? "none"));
+const unavailableReason = computed(
+  () => disabledReason.value ?? (countingDown.value ? actionLabel.value : undefined),
+);
 
 const detailsShown = computed(
   () =>

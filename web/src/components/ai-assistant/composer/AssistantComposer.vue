@@ -201,15 +201,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               }}</span>
             </span>
             <span v-if="twoRows" data-spacer class="flex-1" />
-            <AssistantAddContextMenu
+            <AssistantIconButton
               v-if="!replying"
-              ref="addMenu"
-              :org="org"
-              @select="addOption"
-              @image="openPicker"
+              :label="t('assistant.composer.attachImage')"
+              :icon="assistantGlyph.chipImage"
+              data-test="assistant-attach-image"
+              @click="openPicker"
             />
-            <AssistantContextSeesPopover v-if="!replying" :sid="sid" />
-            <AssistantAgentPicker v-if="!replying" :sid="sid" />
             <AssistantIconButton
               v-if="coarse && recallEntries.length > 0"
               :label="t('assistant.composer.recentPrompts')"
@@ -241,16 +239,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 data-test="assistant-stop"
                 @click="stop"
               />
-              <AssistantIconButton
-                v-else
-                variant="primary"
-                :label="sendLabel"
-                :icon="assistantGlyph.send"
-                :disabled="!canSend"
-                :disabled-reason="sendBlockedReason"
-                data-test="assistant-send"
-                @click="trySend"
-              />
+              <OButtonGroup v-else>
+                <AssistantIconButton
+                  variant="primary"
+                  :label="sendLabel"
+                  :icon="assistantGlyph.send"
+                  :disabled="!canSend"
+                  :disabled-reason="sendBlockedReason"
+                  :class="
+                    !canSend &&
+                    !replying &&
+                    pickerRoom &&
+                    'bg-button-primary! text-button-primary-foreground/50!'
+                  "
+                  data-test="assistant-send"
+                  @click="trySend"
+                />
+                <template v-if="!replying && pickerRoom">
+                  <OSeparator vertical class="w-px" />
+                  <AssistantAgentPicker :sid="sid" />
+                </template>
+              </OButtonGroup>
             </span>
           </div>
         </template>
@@ -338,6 +347,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       ref="file"
       class="hidden"
       accept="image/png,image/jpeg"
+      :type-error-toast="false"
       multiple
       :model-value="null"
       :max-file-size="MAX_IMAGE_SIZE_BYTES"
@@ -401,7 +411,6 @@ import AssistantAgentPicker from "@/components/ai-assistant/agents/AssistantAgen
 import AssistantIconButton from "@/components/ai-assistant/common/AssistantIconButton.vue";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import { TOUCH_TARGET_CLASS } from "@/components/ai-assistant/common/touchTarget";
-import AssistantContextSeesPopover from "@/components/ai-assistant/context/AssistantContextSeesPopover.vue";
 import AssistantMentionMenu, {
   type MentionOption,
 } from "@/components/ai-assistant/context/AssistantMentionMenu.vue";
@@ -437,6 +446,8 @@ import {
 } from "@/composables/assistant/pure";
 import useBreakpoint from "@/composables/useBreakpoint";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OButtonGroup from "@/lib/core/Button/OButtonGroup.vue";
+import OSeparator from "@/lib/core/Separator/OSeparator.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OBanner from "@/lib/feedback/Banner/OBanner.vue";
 import OSpinner from "@/lib/feedback/Spinner/OSpinner.vue";
@@ -449,7 +460,6 @@ import { raw, useI18nTyped } from "@/types/i18n";
 import { formatBytes } from "@/utils/formatters";
 import { getUUIDv7 } from "@/utils/uuid";
 
-import AssistantAddContextMenu from "./AssistantAddContextMenu.vue";
 import AssistantDictateButton from "./AssistantDictateButton.vue";
 import AssistantDictationMeter from "./AssistantDictationMeter.vue";
 import AssistantDictationTail from "./AssistantDictationTail.vue";
@@ -486,7 +496,6 @@ const { mdUp } = useBreakpoint();
 const root = ref<HTMLElement | null>(null);
 const textbox = ref<InstanceType<typeof OTextarea> | null>(null);
 const file = ref<InstanceType<typeof OFile> | null>(null);
-const addMenu = ref<InstanceType<typeof AssistantAddContextMenu> | null>(null);
 const mention = ref<InstanceType<typeof AssistantMentionMenu> | null>(null);
 const controls = ref<HTMLElement | null>(null);
 const width = useComposerWidth(root);
@@ -546,7 +555,8 @@ const attachNotice = computed(() => {
   if (!key || attachDismissed.value || !attached.value || replying.value) return false;
   return !readHints(key).attachSaved;
 });
-const hasContent = computed(() => !!text.value.trim() || attached.value);
+// A bare `@` is an unfinished mention, not a question (CT-05).
+const hasContent = computed(() => /[^@\s]/.test(text.value) || attached.value);
 const storageBlocked = computed(() => store.drafts.storageBlocked.value);
 const ui = computed(() => composerUi(props.sid ?? ""));
 const status = computed(() => (liveSid.value ? composerUi(liveSid.value).status : ui.value.status));
@@ -651,7 +661,10 @@ const canSend = computed(
       (replying.value || (!running.value && !props.cooldownReason && busyLeft.value === 0))),
 );
 const sendLabel = computed(() => {
-  if (!replying.value) return t("assistant.turn.sendLabel");
+  if (!replying.value)
+    return pickerRoom.value
+      ? t("assistant.composer.sendTo", { agent: agentLabel.value })
+      : t("assistant.turn.sendLabel");
   return asking.value ? t("assistant.question.sendAnswer") : t("assistant.composer.sendReply");
 });
 const sendBlockedReason = computed(() => {
@@ -674,7 +687,7 @@ const placeholder = computed<I18nText>(() => {
   if (inertKind.value) return t("assistant.composer.inert");
   if (replying.value) return t("assistant.composer.replyPlaceholder");
   if (shownAgent.value !== DEFAULT_AGENT)
-    return t("assistant.composer.agent", { agent: agentLabel.value });
+    return t("assistant.composer.askAgent", { agent: agentLabel.value });
   if (!context.noScope.value)
     return t("assistant.composer.scoped", {
       stream: raw((context.page.value?.selectedStreams ?? []).join(", ")),
@@ -959,16 +972,6 @@ function pickMention(option: MentionOption): void {
   void nextTick(() => focusInput(at));
 }
 
-/** A pick from the `+` menu: the same chip or time as `@`, with the text left as typed. */
-function addOption(option: MentionOption): void {
-  const id = liveSid.value ?? ensureSid();
-  if (!id) return;
-  const mixed = mixedStreamType(option);
-  if (mixed) return capHit("type", t("assistant.context.mixedStreams", { type: raw(mixed) }));
-  applyOption(id, option);
-  void nextTick(() => focusInput("end"));
-}
-
 // Adds the option's chip; false when a cap refused it.
 function applyOption(id: Sid, option: MentionOption): boolean {
   if (option.chip) {
@@ -1056,6 +1059,12 @@ function mentionKey(event: KeyboardEvent): boolean {
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     mention.value?.move(event.key === "ArrowDown" ? 1 : -1);
+    return true;
+  }
+  const plain = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+  if ((event.key === "Home" || event.key === "End") && plain) {
+    event.preventDefault();
+    mention.value?.edge(event.key === "Home" ? "first" : "last");
     return true;
   }
   if (event.key === "Enter" || event.key === "Tab") {
@@ -1738,6 +1747,6 @@ onBeforeUnmount(() => {
 defineExpose({
   focusInput,
   prefill,
-  closeOverlays: () => (closeMention(), addMenu.value?.close()),
+  closeOverlays: () => closeMention(),
 });
 </script>

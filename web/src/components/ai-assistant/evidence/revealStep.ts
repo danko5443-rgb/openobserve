@@ -34,7 +34,9 @@ export async function revealStep(from: HTMLElement | null, callId: string): Prom
   const found = Array.from(scope?.querySelectorAll<HTMLElement>("[data-step-header]") ?? []).find(
     (candidate) => candidate.dataset.stepHeader === callId,
   );
-  const header = found?.closest("button") ?? found;
+  // A folded marker is hidden; a plain row has no button, so its visible row span is the target.
+  const header =
+    found?.closest("button") ?? found?.closest<HTMLElement>("[data-step-row]") ?? found;
   if (!header) return false;
   header.scrollIntoView?.({ block: "nearest" });
   header.focus();

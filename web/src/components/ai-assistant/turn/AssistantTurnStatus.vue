@@ -30,9 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     ]"
   >
     <div class="flex min-w-0 flex-1 items-center gap-2">
-      <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+      <span
+        class="flex w-5 shrink-0 items-center justify-center motion-reduce:**:animate-none"
+        aria-hidden="true"
+      >
         <OIcon v-if="glyph" :name="glyph" size="xs" data-test="assistant-turn-status-glyph" />
-        <AssistantStatusDot v-else state="working" data-test="assistant-turn-status-spinner" />
+        <OSpinner v-else variant="dots" size="xs" data-test="assistant-turn-status-spinner" />
       </span>
       <OTruncatedText class="min-w-0" data-test="assistant-turn-status-text">{{
         status.line
@@ -40,9 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <OText
         v-if="status.elapsed"
         variant="meta"
-        class="ms-auto min-w-[11ch] shrink-0 text-end whitespace-nowrap tabular-nums"
+        class="shrink-0 whitespace-nowrap tabular-nums"
         data-test="assistant-turn-status-elapsed"
-        >{{ status.elapsed }}</OText
+        ><span aria-hidden="true">· </span>{{ status.elapsed }}</OText
       >
     </div>
     <OButton
@@ -89,6 +92,9 @@ export interface AssistantTurnStatusEmits {
 /** Elapsed redraws this often while a turn runs; the text changes, nothing moves (HT-01 AC 11). */
 export const STATUS_TICK_MS = 1_000;
 
+// A turn that answers this fast never shows a ticking zero.
+const ELAPSED_SHOWN_MS = 3_000;
+
 // States whose own words stay in every copy set: a step, a wait on the user, a reconnect, a stop.
 const OWN_WORDS: ReadonlySet<string> = new Set([
   "running_tool",
@@ -102,7 +108,6 @@ const OWN_WORDS: ReadonlySet<string> = new Set([
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
-import AssistantStatusDot from "@/components/ai-assistant/common/AssistantStatusDot.vue";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import {
   elapsedMs,
@@ -117,6 +122,7 @@ import OCard from "@/lib/core/Card/OCard.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
+import OSpinner from "@/lib/feedback/Spinner/OSpinner.vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 import { formatElapsed } from "@/utils/formatters";
 
@@ -148,7 +154,8 @@ const status = computed(() => {
   const own = props.line ?? hostLine(now, shared.line);
   // The helper and the analysis say their own seconds in the line, so they carry no second timer.
   if (own) return { ...shared, line: own, elapsed: null };
-  return { ...shared, elapsed: props.copy === "chat" ? shared.elapsed : null };
+  const shown = props.copy === "chat" && elapsedMs(props.meta, now) >= ELAPSED_SHOWN_MS;
+  return { ...shared, elapsed: shown ? shared.elapsed : null };
 });
 
 const progress = computed<TurnProgress>(() => {

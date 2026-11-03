@@ -26,6 +26,7 @@ import { raw } from "@/types/i18n";
 import { fakeAssistant, fakeRouter, fakeVuex, hintBus } from "../__tests__/fakeAssistant";
 import { historyStubs } from "../__tests__/historyStubs";
 import { fakeRuns } from "../runs/runsTestKit";
+import AssistantShareControl from "../share/AssistantShareControl.vue";
 import AssistantThreadHeader from "../thread/AssistantThreadHeader.vue";
 import AssistantShell, {
   SHELL_ROUTE_CONTEXT,
@@ -338,6 +339,12 @@ describe("AssistantShell chrome and focus", () => {
     const docked = setup({ placement: "docked" }).wrapper;
     expect(docked.find('[data-test="assistant-shell-close"]').exists()).toBe(true);
     expect(docked.get('[data-test="assistant-shell-chrome"]').classes()).toContain("h-10");
+  });
+
+  it("leaves the full page by navigating, so it has no ×", () => {
+    const { wrapper } = setup({ placement: "full" });
+    expect(wrapper.find('[data-test="assistant-layout-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="assistant-shell-close"]').exists()).toBe(false);
   });
 
   it("closes through the store from ×, keeping the session", async () => {
@@ -1271,6 +1278,56 @@ describe("AssistantShell history states", () => {
     await wrapper.get('[data-test="assistant-shell-place-window"]').trigger("click");
     expect(store.windowOf(sid)).toMatchObject({ state: "open" });
     expect(store.state.shell.placement.kind).toBe("hidden");
+  });
+
+  function mountMenus(props: Partial<AssistantShellProps> = {}) {
+    fake.current = fakeAssistant();
+    const { store } = fake.current;
+    const sid = open(store);
+    store.state.sessions[sid].messages.push({
+      role: "assistant",
+      content: raw("a"),
+      contentBlocks: [{ type: "text", text: "a" }],
+    });
+    const wrapper = mount(AssistantShell, {
+      props: { placement: "sidebar", ...props },
+      global: {
+        plugins: [fakeRouter([{ path: "/ai", name: "assistant", component: {} }]), fakeVuex()],
+        stubs: { ...historyStubs, ODropdownGroup: { template: "<div><slot /></div>" } },
+      },
+      attachTo: document.body,
+    });
+    return { wrapper, store, sid };
+  }
+
+  it("opens quick share once the title menu has handed focus back, and Esc returns it to the title", async () => {
+    const { wrapper } = mountMenus();
+    await flushPromises();
+    const title = wrapper.get('[data-test="assistant-thread-title-button"]').element as HTMLElement;
+    const outside = document.body.appendChild(document.createElement("button"));
+    outside.focus();
+    await wrapper.get('[data-test="assistant-thread-menu-share"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-test="assistant-share-quick"]').exists()).toBe(false);
+    title.focus();
+    await flushPromises();
+    const quick = wrapper.get('[data-test="assistant-share-quick"]');
+    outside.focus();
+    await quick.trigger("keydown", { key: "Escape" });
+    wrapper
+      .findAllComponents(AssistantShareControl)
+      .find((c) => c.props("variant") === "quick")
+      ?.vm.$emit("update:open", false);
+    await flushPromises();
+    expect(wrapper.find('[data-test="assistant-share-quick"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(title);
+  });
+
+  it("puts the sheet's only move, Full page, straight into its title menu", async () => {
+    const { wrapper } = mountMenus({ sheet: true });
+    await flushPromises();
+    expect(wrapper.findAll('[data-test="assistant-shell-place-full"]')).toHaveLength(1);
+    expect(wrapper.find('[data-test="assistant-title-menu-layout"]').exists()).toBe(false);
   });
 
   it("shows the chat it is given and leaves the primary container's alone in a window", async () => {

@@ -67,6 +67,9 @@ describe("AssistantErrorDetails", () => {
     expect(
       document.body.querySelector('[data-test="assistant-error-details-code"]')?.textContent,
     ).toContain("provider_error");
+    const value = document.body.querySelector('[data-test="assistant-error-details-turn"]');
+    expect(value?.closest('[class*="grid-cols-[10rem"]')).toBeNull();
+    expect(wrapper.findComponent({ name: "OPopover" }).props("collisionPadding")).toBe(8);
   });
 
   it("is a collapsed Details disclosure holding the rows of `80` §1.4", async () => {

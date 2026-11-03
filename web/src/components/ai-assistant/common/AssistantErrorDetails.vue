@@ -31,24 +31,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       </OButton>
     </template>
     <div :class="['flex flex-col gap-2', variant === 'popover' ? 'w-80 max-w-full p-3' : 'pt-1']">
-      <dl
-        class="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
-        data-test="assistant-error-details-rows"
-      >
-        <template v-for="row in rows" :key="row.key">
-          <dt class="min-w-0 font-medium">{{ row.label }}</dt>
-          <dd
+      <ODescriptionList dense data-test="assistant-error-details-rows">
+        <ODescriptionItem v-for="row in rows" :key="row.key" :label="row.label" stacked>
+          <span
             :class="[
-              'min-w-0 whitespace-pre-wrap',
+              'text-xs whitespace-pre-wrap',
               row.id ? 'font-mono break-all' : 'break-words',
               row.mono ? 'font-mono' : '',
             ]"
             :data-test="`assistant-error-details-${row.key}`"
+            >{{ row.value }}</span
           >
-            {{ row.value }}
-          </dd>
-        </template>
-      </dl>
+        </ODescriptionItem>
+      </ODescriptionList>
       <OButton
         v-if="statusLink"
         variant="ghost-primary"
@@ -134,6 +129,8 @@ import OButton from "@/lib/core/Button/OButton.vue";
 import OCollapsible from "@/lib/core/Collapsible/OCollapsible.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
+import ODescriptionItem from "@/lib/lists/DescriptionList/ODescriptionItem.vue";
+import ODescriptionList from "@/lib/lists/DescriptionList/ODescriptionList.vue";
 import { toast } from "@/lib/feedback/Toast/useToast";
 import OTextarea from "@/lib/forms/Input/OTextarea.vue";
 import OPopover from "@/lib/overlay/Popover/OPopover.vue";
@@ -211,7 +208,7 @@ async function copyDetails(): Promise<void> {
 
 const wrapperProps = computed(() =>
   props.variant === "popover"
-    ? { ariaLabel: t("assistant.errorDetails.title"), privacy: "mask" }
+    ? { ariaLabel: t("assistant.errorDetails.title"), privacy: "mask", collisionPadding: 8 }
     : {
         modelValue: open.value,
         "onUpdate:modelValue": (value: boolean) => (open.value = value),

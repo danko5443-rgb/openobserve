@@ -62,16 +62,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :data-test="`assistant-context-sees-${group.id}`"
       >
         <OText v-if="group.id === 'not_read'" variant="label" as="h3">{{ group.title }}</OText>
-        <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
-          <div
+        <ODescriptionList dense>
+          <ODescriptionItem
             v-for="row in group.rows"
             :key="row.id"
-            class="col-span-2 grid grid-cols-subgrid items-center"
+            :label="row.label"
             data-test="assistant-context-sees-row"
             :data-field="row.id"
           >
-            <dt class="text-text-secondary min-w-0 text-xs">{{ row.label }}</dt>
-            <dd class="text-text-body flex min-w-0 items-center gap-1 text-xs">
+            <span class="flex min-w-0 items-center gap-1 text-xs">
               <OTruncatedText class="min-w-0 flex-1">{{ row.value }}</OTruncatedText>
               <AssistantIconButton
                 v-if="group.id === 'not_read'"
@@ -79,9 +78,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 :icon="assistantGlyph.notReadHelp"
                 data-test="assistant-context-sees-not-read-hint"
               />
-            </dd>
-          </div>
-        </dl>
+            </span>
+          </ODescriptionItem>
+        </ODescriptionList>
       </div>
 
       <OText variant="meta" as="p" data-test="assistant-context-sees-disclosure">{{
@@ -126,6 +125,8 @@ import { useVoiceAvailability } from "@/components/ai-assistant/composer/useAssi
 import { useAssistantContext, useAssistantStore } from "@/composables/assistant";
 import OText from "@/lib/core/Typography/OText.vue";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
+import ODescriptionItem from "@/lib/lists/DescriptionList/ODescriptionItem.vue";
+import ODescriptionList from "@/lib/lists/DescriptionList/ODescriptionList.vue";
 import OPopover from "@/lib/overlay/Popover/OPopover.vue";
 import { trackAssistant } from "@/services/assistantAnalytics";
 import { useI18nTyped } from "@/types/i18n";

@@ -22,11 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     :label="t('assistant.share.attachmentHidden')"
     data-test="assistant-attachment-hidden"
   />
-  <div
-    v-else
-    class="border-border-default rounded-default min-w-0 border"
-    data-test="assistant-attachment-block"
-  >
+  <OCard v-else variant="outlined" class="min-w-0" data-test="assistant-attachment-block">
     <OCollapsible
       v-model="open"
       trigger-class="min-h-8 px-2 max-md:min-h-11 pointer-coarse:min-h-11"
@@ -54,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         />
       </div>
     </OCollapsible>
-  </div>
+  </OCard>
 </template>
 
 <script lang="ts">
@@ -88,6 +84,7 @@ export function attachmentKey(name: string): string | null {
 import { computed, ref } from "vue";
 
 import OTag from "@/lib/core/Badge/OTag.vue";
+import OCard from "@/lib/core/Card/OCard.vue";
 import { TOUCH_TARGET_CLASS } from "@/components/ai-assistant/common/touchTarget";
 import OCodeBlock from "@/lib/core/Code/OCodeBlock.vue";
 import OCollapsible from "@/lib/core/Collapsible/OCollapsible.vue";

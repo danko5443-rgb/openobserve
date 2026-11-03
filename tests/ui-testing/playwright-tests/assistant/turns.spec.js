@@ -165,9 +165,8 @@ test.describe("assistant honest turns", () => {
     await ask(page, "drop_mid_stream");
     await expect(assistant.outcome()).toHaveAttribute("data-code", "stream_dropped");
     await expect(assistant.outcome()).toContainText(/Connection lost( after \d+ s)?\. Nothing was changed\./);
-    await expect(assistant.outcomeAction()).toHaveText("Retry");
+    await expect(assistant.outcomeAction()).toHaveAttribute("aria-label", "Retry");
     await expect(assistant.answer().locator('[data-test="assistant-block-text"]')).not.toHaveCount(0);
-    await expect(page.locator('[data-test^="assistant-feedback"]')).toHaveCount(0);
   });
 
   // The engine resumes from the turn tail only when the runtime passes `tailEnabled` to turnEngine.ts, which it does not yet.
@@ -228,7 +227,7 @@ test.describe("assistant honest turns", () => {
     await expect(outcome).toHaveAttribute("data-code", "provider_error");
     await expect(outcome).toHaveClass(/bg-banner-error-soft-bg/);
     await expect(outcome.locator('[data-test="assistant-turn-outcome-title"]')).toHaveText(/The AI provider failed/);
-    await expect(assistant.outcomeAction()).toHaveText("Retry");
+    await expect(assistant.outcomeAction()).toHaveAttribute("aria-label", "Retry");
     await outcome.locator('[data-test="assistant-error-details"] button').first().click();
     await expect(outcome.locator('[data-test="assistant-error-details-code"]')).toHaveText("provider_error");
     await expect(page.getByText(/^Error:/)).toHaveCount(0);
@@ -357,29 +356,31 @@ test.describe("assistant honest turns", () => {
     await expect(assistant.container().locator('[data-test="assistant-scroll-latest"]')).toHaveCount(0);
   });
 
-  test("EB-09 Regenerate shows the new attempt as version 2 and gives focus to the composer", { tag: ["@mock"] }, async ({ page }) => {
+  test("EB-09 Re-run shows the new attempt as version 2 and gives focus to the composer", { tag: ["@mock"] }, async ({ page }) => {
     await openOnLogs(page);
     await ask(page, "complete");
     await expect(assistant.answer().locator("h2")).toBeVisible();
     await harness.nextScenario(page, "complete");
-    await assistant.answer().hover();
-    await assistant.container().locator('[data-test="assistant-msg-regenerate"]').click();
+    const rerun = assistant.container().locator('[data-test="assistant-msg-regenerate"]');
+    await expect(rerun).toHaveAttribute("aria-label", "Re-run");
+    await rerun.click();
     await expect(assistant.composer()).toBeFocused();
     await expect(assistant.container().locator('[data-test="assistant-version-count"]')).toHaveText("2 of 2");
     await expect(assistant.transcript().locator("article[data-turn-id]")).toHaveCount(1);
   });
 
-  test("EB-09 AC 6 Copy as Markdown sources the SQL fence and ends with the stamp", { tag: ["@mock"] }, async ({ context, page }) => {
+  test("EB-09 Copy answer puts the answer's plain text on the clipboard", { tag: ["@mock"] }, async ({ context, page }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await openOnLogs(page);
     await ask(page, "complete");
     await expect(assistant.answer().locator("h2")).toBeVisible();
-    await assistant.answer().hover();
-    await assistant.container().locator('[data-test="assistant-msg-copy-md"]').click();
+    const copy = assistant.answer().locator('[data-test="assistant-msg-copy-answer"]');
+    await expect(copy).toHaveAttribute("aria-label", "Copy answer");
+    await copy.click();
+    await expect(copy).toHaveAttribute("aria-label", "Copied");
     const text = await page.evaluate(() => navigator.clipboard.readText());
-    expect(text).toContain("## Checkout 5xx spike — what happened");
-    expect(text).toMatch(/```sql\n-- stream default · \d\d:\d\d–\d\d:\d\d \S+/);
-    expect(text).toMatch(/Evaluated \d\d:\d\d–\d\d:\d\d \S+ · 1 query$/);
+    expect(text).toContain("Checkout 5xx spike — what happened");
+    expect(text).not.toContain("## ");
   });
 
   test("SHELL-08 at 375 the sheet keeps the composer and the last message above an emulated keyboard", { tag: ["@mock", "@responsive"] }, async ({ page }) => {

@@ -41,7 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         @commit="commitWidth"
         @reset="resetWidth"
       />
-      <AssistantShell placement="sidebar" />
+      <div :class="pageCardClasses(false, isDark)" data-test="assistant-sidebar-card">
+        <AssistantShell placement="sidebar" />
+      </div>
     </div>
     <OSheet
       v-else
@@ -94,8 +96,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // The column reads its width from a unitless rem variable, so no inline width is ever written.
 const WIDTH = "w-[calc(var(--o-assistant-sidebar-width,24)*1rem)] max-w-[50vw] min-w-80";
 
+// The gutter matches the page's, so the panel reads as a second card beside it.
 const PINNED_CLASSES = [
-  "bg-surface-base border-border-default relative h-full shrink-0 border-s",
+  "bg-surface-chrome-deeper relative flex h-full shrink-0 flex-col pe-2 pb-2",
   WIDTH,
 ].join(" ");
 
@@ -139,6 +142,8 @@ import {
   type WindowGeometry,
 } from "@/composables/assistant";
 import useBreakpoint from "@/composables/useBreakpoint";
+import { useTheme } from "@/composables/useTheme";
+import { pageCardClasses } from "@/layouts/pageCard";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
 import { DRAWER_INSET_ATTR, setDrawerInsetEnd } from "@/lib/overlay/Drawer/drawerInset";
 import OSheet from "@/lib/overlay/Sheet/OSheet.vue";
@@ -150,6 +155,7 @@ import AssistantLifecycleDialogs from "./AssistantLifecycleDialogs.vue";
 import AssistantResizeHandle from "./AssistantResizeHandle.vue";
 import AssistantShell from "./AssistantShell.vue";
 import AssistantStatusRegion from "./AssistantStatusRegion.vue";
+import { readFromAnswerStart } from "./answerStart";
 import { tearOffRequest } from "./assistantWindowHost";
 import { closeLockedPanel, lockedPanelMoved, useLockedPanel } from "./lockedPanel";
 
@@ -180,6 +186,7 @@ const placement = useAssistantPlacement(store);
 const lockedPanel = useLockedPanel();
 const route = useRoute();
 const { lgUp } = useBreakpoint();
+const { isDark } = useTheme();
 const column = ref<HTMLElement | null>(null);
 const region = ref<InstanceType<typeof AssistantStatusRegion> | null>(null);
 const liveWidth = ref<number | null>(null);
@@ -377,19 +384,21 @@ watch(visible, (shown, was) => {
   void nextTick(writeInsetEnd);
 });
 
-// A finished answer on a phone is read from its start, not from the bottom the stream left it at.
+// A followed answer on a phone is read from its start when that start scrolled away; one that fits stays followed.
 watch(
   () => activeSession.value?.turn.state,
   async (state, before) => {
     const session = activeSession.value;
     if (lgUp.value || !visible.value || !session || state !== "done") return;
     if (!before || AT_REST.has(before)) return;
+    const following = session.ui.follow;
     await nextTick();
     const answers = document.querySelectorAll<HTMLElement>(
       "[data-test='assistant-shell-sheet'] [data-answer]",
     );
     const last = answers[answers.length - 1];
-    if (!last) return;
+    const scroller = last?.closest<HTMLElement>("[data-transcript-scroll]") ?? null;
+    if (!readFromAnswerStart(following, last, scroller)) return;
     store.setFollow(session.sid, false);
     last.scrollIntoView?.({ block: "start" });
   },

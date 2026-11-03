@@ -220,6 +220,16 @@ describe("AssistantApprovalCard", () => {
       "Create alert x",
     ],
     [
+      "create named only by its tool id",
+      {
+        type: "confirmation_required",
+        tool: "o2_CreateDashboard",
+        kind: "create",
+        targets: [{ type: "dashboard", name: "CreateDashboard" }],
+      },
+      "Create dashboard",
+    ],
+    [
       "run_command",
       { type: "confirmation_required", tool: "acme-cli", args: { command: "deploy" } },
       "Run command on acme-cli",

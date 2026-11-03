@@ -17,7 +17,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <template>
   <div
     ref="root"
-    class="@container flex h-full min-h-0 min-w-0 flex-col gap-2 p-2"
+    :class="[
+      '@container flex h-full min-h-0 min-w-0 flex-col gap-2 p-2',
+      mode === 'rail' && 'bg-surface-panel pt-0',
+    ]"
     :role="mode === 'panel' ? 'region' : undefined"
     :aria-label="mode === 'panel' ? t('assistant.history.view.title') : undefined"
     :data-mode="mode"
@@ -26,7 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     data-dd-privacy="mask"
     data-test="assistant-history"
   >
-    <div v-if="toolsShown" class="flex min-w-0 shrink-0 items-center gap-1">
+    <div
+      v-if="toolsShown"
+      :class="[
+        'flex min-w-0 shrink-0 items-center gap-1',
+        mode === 'rail' && 'border-border-default -mx-2 h-10 border-b px-2',
+      ]"
+      data-test="assistant-history-tools"
+    >
       <OSearchInput
         :model-value="history.filter.value.q"
         size="sm"
@@ -346,8 +356,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </ul>
         <OButton
           v-if="history.hasMore.value && drawn.length && !endScope"
-          variant="ghost"
-          size="sm"
+          variant="ghost-primary"
+          size="xs"
           class="mt-1 max-md:min-h-11 pointer-coarse:min-h-11"
           data-test="assistant-history-load-older"
           @click="loadOlder"
@@ -373,14 +383,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         data-test="assistant-history-end-scope"
       >
         {{ t("assistant.history.titlesOnly") }} ·
-        <button
-          type="button"
-          class="text-assistant-link cursor-pointer"
+        <OButton
+          variant="ghost-primary"
+          size="xs"
           data-test="assistant-history-load-older"
           @click="loadOlder"
         >
           {{ t("assistant.history.loadOlder") }}
-        </button>
+        </OButton>
       </p>
       <OText
         v-else-if="retentionLine"
@@ -815,7 +825,7 @@ function agentIcon(row: HistoryRow): IconName | null {
   if (!offersAgents.value) return null;
   const key = runAgentKey(row.agentType);
   if (key === "investigator") return assistantGlyph.agentInvestigator;
-  return key === "queryBuilder" ? assistantGlyph.agentQueryBuilder : assistantGlyph.agentGeneral;
+  return key === "queryBuilder" ? assistantGlyph.agentQueryBuilder : null;
 }
 
 function orgLabel(id: string): string {

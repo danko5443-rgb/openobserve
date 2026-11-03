@@ -15,41 +15,41 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <dl
-    class="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] gap-x-3 gap-y-1"
-    data-test="assistant-chip-fields"
-  >
-    <template v-for="entry in entries" :key="entry.key">
-      <dt
-        :class="[
-          'min-w-0 font-mono text-xs break-all',
-          entry.internal ? 'text-text-secondary' : 'text-text-heading',
-        ]"
-        :data-internal="entry.internal ? '' : undefined"
-      >
-        {{ entry.key }}
-        <span v-if="entry.internal" class="text-text-secondary"
+  <ODescriptionList dense data-test="assistant-chip-fields">
+    <ODescriptionItem v-for="entry in entries" :key="entry.key" :label="raw(entry.key)">
+      <template #label>
+        <span
+          :class="[
+            'font-mono break-all',
+            entry.internal ? 'text-text-secondary' : 'text-text-heading',
+          ]"
+          :data-internal="entry.internal ? '' : undefined"
+          >{{ entry.key }}</span
+        >
+        <span v-if="entry.internal" class="ms-1"
           >{{ dot }} {{ t("assistant.context.internal") }}</span
         >
-      </dt>
-      <dd
+      </template>
+      <div
         :class="[
-          'min-w-0 text-xs break-all whitespace-pre-wrap',
+          'text-xs break-all whitespace-pre-wrap',
           entry.long && 'max-h-32 overflow-y-auto',
-          entry.internal ? 'text-text-secondary' : 'text-text-body',
+          entry.internal && 'text-text-secondary',
         ]"
         :tabindex="entry.long ? 0 : undefined"
       >
         {{ entry.value }}
-      </dd>
-    </template>
-  </dl>
+      </div>
+    </ODescriptionItem>
+  </ODescriptionList>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 
 import { INTERNAL_FIELDS } from "@/composables/assistant";
+import ODescriptionItem from "@/lib/lists/DescriptionList/ODescriptionItem.vue";
+import ODescriptionList from "@/lib/lists/DescriptionList/ODescriptionList.vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 
 const props = withDefaults(

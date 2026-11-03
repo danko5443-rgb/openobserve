@@ -166,6 +166,18 @@ describe("AssistantSidebarHost", () => {
     expect(column()!.style.width).toBe("");
   });
 
+  it("draws the panel as a second page card in the page's gutter", async () => {
+    const { open } = await setup();
+    open();
+    await flushPromises();
+    expect(column()!.classList).toContain("bg-surface-chrome-deeper");
+    expect(column()!.classList).toContain("pe-2");
+    const card = column()!.querySelector('[data-test="assistant-sidebar-card"]')!;
+    for (const cls of ["rounded-surface", "border", "shadow-md", "bg-surface-base"])
+      expect(card.classList).toContain(cls);
+    expect(card.querySelector('[data-test="assistant-shell-sidebar"]')).not.toBeNull();
+  });
+
   it("puts the resize handle on the panel's inner edge; a key step stores the width", async () => {
     window.innerWidth = 1280;
     const { open, store } = await setup();

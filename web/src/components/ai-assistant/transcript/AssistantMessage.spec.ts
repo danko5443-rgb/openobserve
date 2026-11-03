@@ -94,7 +94,7 @@ describe("AssistantMessage", () => {
     const later = mount(AssistantMessage, {
       props: { message: { ...prompt, agentId: "sre" }, turnId: "t1" },
     });
-    expect(later.get('[data-test="assistant-message-meta"]').text()).not.toContain("· to");
+    expect(later.find('[data-test="assistant-message-meta"]').exists()).toBe(false);
   });
 
   it("gives a long run break points with <wbr>, keeping the text exactly as sent", () => {
@@ -138,14 +138,18 @@ describe("AssistantMessage", () => {
     );
   });
 
-  it("shows the user's text as plain text, never Markdown, beside the time (`30` §2.1)", () => {
+  it("shows the user's text as plain text, never Markdown, with its time on the answer line (`30` §2.1)", () => {
     const wrapper = mountMessage(user());
     const body = wrapper.get('[data-test="assistant-message-text"]');
     expect(body.text()).toBe("**not bold** <img src=x onerror=alert(1)>");
     expect(body.element.querySelector("strong, img")).toBeNull();
     expect(body.classes()).toContain("whitespace-pre-wrap");
-    expect(wrapper.get('[data-test="assistant-message-meta"]').text()).toMatch(/\d{2}:\d{2}$/);
+    expect(wrapper.find('[data-test="assistant-message-meta"]').exists()).toBe(false);
     expect(wrapper.attributes("data-test")).toBe("assistant-message-user");
+    const reply = mountMessage(answer([{ type: "text", text: "a" }]), {
+      turn: { prompt: user() } as never,
+    });
+    expect(reply.get('[data-test="assistant-answer-time"]').text()).toMatch(/\d{2}:\d{2}$/);
   });
 
   it("names the author of a Slack-era record and lists sent chips read-only (CT-02 AC 10)", () => {
@@ -164,9 +168,7 @@ describe("AssistantMessage", () => {
         ],
       }),
     );
-    expect(wrapper.get('[data-test="assistant-message-meta"]').text()).toMatch(
-      /^ada@example.com · /,
-    );
+    expect(wrapper.get('[data-test="assistant-message-meta"]').text()).toBe("ada@example.com");
     expect(wrapper.get('[data-test="assistant-message-chips"]').text()).toBe("Log row · cart");
     expect(wrapper.find('[data-test="assistant-context-chip-remove"]').exists()).toBe(false);
   });
@@ -468,16 +470,26 @@ describe("AssistantMessage", () => {
       expect(status.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it("adds the action row only once the turn is done", () => {
+    it("adds the answer line only once the turn is done, never with feedback", () => {
       const blocks = [
         ...steps,
         { type: "text" as const, text: "x" },
         { type: "footer" as const, footer: { traceId: "t" } },
       ];
-      const done = mountLive(blocks);
-      expect(done.find('[data-test="assistant-feedback"]').exists()).toBe(true);
-      const live = mountLive(blocks, { outcome: "live" });
-      expect(live.find('[data-test="assistant-feedback"]').exists()).toBe(false);
+      const done = mount(AssistantMessage, {
+        props: { message: answer(blocks, { sentAt: 0 }), turnId: "t1" },
+        slots: { actions: '<button data-test="actions">a</button>' },
+      });
+      const line = done.get('[data-test="assistant-answer-line"]');
+      expect(line.find('[data-test="actions"]').exists()).toBe(true);
+      expect(line.find('[data-test="assistant-answer-time"]').exists()).toBe(true);
+      const trigger = done.get('[data-test="assistant-queries-line"]').element;
+      expect(trigger.parentElement?.contains(line.element)).toBe(true);
+      expect(done.find('[data-test="assistant-feedback"]').exists()).toBe(false);
+      const live = mount(AssistantMessage, {
+        props: { message: answer(blocks, { sentAt: 0 }), turnId: "t1", live: true },
+      });
+      expect(live.find('[data-test="assistant-answer-line"]').exists()).toBe(false);
     });
   });
 });

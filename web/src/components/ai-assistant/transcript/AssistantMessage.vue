@@ -17,31 +17,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <template>
   <div
     v-if="message.role === 'user'"
-    class="group/message @container flex min-w-0 flex-col gap-1"
+    class="@container flex min-w-0 flex-col gap-1"
     data-test="assistant-message-user"
     data-scroll-anchor
   >
     <div class="flex min-w-0 items-baseline gap-2">
-      <div class="min-w-0 flex-1">
-        <slot name="body">
-          <p
-            v-if="userText"
-            class="text-text-secondary min-w-0 text-sm break-words whitespace-pre-wrap"
-            data-test="assistant-message-text"
-          >
-            {{ userText }}
-          </p>
-        </slot>
-      </div>
-      <slot name="actions" />
+      <p
+        v-if="userText"
+        class="text-text-secondary min-w-0 flex-1 text-sm break-words whitespace-pre-wrap"
+        data-test="assistant-message-text"
+      >
+        {{ userText }}
+      </p>
       <OText
+        v-if="rangeLabel || userMeta"
         variant="meta"
         as="span"
-        class="shrink-0 whitespace-nowrap"
+        class="ms-auto shrink-0 whitespace-nowrap"
         data-test="assistant-message-meta"
       >
         <span v-if="rangeLabel" class="@max-[22rem]:hidden" data-test="assistant-message-range">
-          {{ rangeLabel }} ·
+          {{ rangeLabel }}<template v-if="userMeta"> ·</template>
         </span>
         {{ userMeta }}
       </OText>
@@ -243,37 +239,53 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :turn="turn"
       />
     </template>
-    <AssistantAnswerMeta
-      v-if="!live && message.role === 'assistant' && !hasFindings"
-      :message="message"
-      :turn="turn"
-      :readonly="readonly"
-    />
     <slot name="after" />
     <AssistantQueriesGroup
-      v-if="!live && message.role === 'assistant'"
+      v-if="!live"
       :message="message"
       :readonly="readonly"
       :turn="turn"
       :unavailable="unavailableClaims"
-    />
-    <component
-      :is="footerRenderer"
-      v-if="footerRenderer && turn && !live"
-      :block="FOOTER_BLOCK"
-      :block-id="`${turnId}:footer`"
-      :message="message"
-      :readonly="readonly"
-      :density="density"
-      :turn="turn"
-    />
-    <div
-      v-if="!live && (feedbackShown || $slots.actions)"
-      class="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1"
     >
-      <AssistantFeedback v-if="feedbackShown" :message="message" :turn="turn" />
-      <slot name="actions" />
-    </div>
+      <template #line-end>
+        <div
+          :class="[
+            'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 empty:hidden',
+            !steps.length &&
+              $slots.actions &&
+              'md:pointer-fine:[&>[data-test=assistant-msg-actions]]:-ms-1.5',
+          ]"
+          data-test="assistant-answer-line"
+        >
+          <slot name="actions" />
+          <OText
+            v-if="answerTime"
+            variant="meta"
+            as="span"
+            class="shrink-0 whitespace-nowrap"
+            data-test="assistant-answer-time"
+          >
+            {{ answerTime }}
+          </OText>
+          <AssistantAnswerMeta
+            v-if="!hasFindings"
+            :message="message"
+            :turn="turn"
+            :readonly="readonly"
+          />
+          <component
+            :is="footerRenderer"
+            v-if="footerRenderer && turn"
+            :block="FOOTER_BLOCK"
+            :block-id="`${turnId}:footer`"
+            :message="message"
+            :readonly="readonly"
+            :density="density"
+            :turn="turn"
+          />
+        </div>
+      </template>
+    </AssistantQueriesGroup>
     <slot name="follow-ups" />
   </div>
 </template>
@@ -408,7 +420,6 @@ import {
   assistantEvidenceHostKey,
   claimNumbers,
   fenceQuery,
-  footerOf,
   rebuildMarkdownTarget,
   buildNavigationRoute,
   parseAttachmentBlocks,
@@ -428,7 +439,6 @@ import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
 import { formatOrgRange, formatOrgTime } from "@/utils/formatters";
 
 import AssistantAttachmentBlock from "./AssistantAttachmentBlock.vue";
-import AssistantFeedback from "./AssistantFeedback.vue";
 import {
   AssistantMarkdownCode,
   AssistantMarkdownPart,
@@ -491,15 +501,20 @@ const sentChips = computed(() =>
 const sentContext = computed(() => raw(sentChips.value.map((chip) => chip.label).join(" · ")));
 const images = computed<ImageAttachment[]>(() => props.message.images ?? []);
 
-// The question line keeps the hour; another person's message also keeps who wrote it.
-const userMeta = computed<I18nText>(() => {
-  const at = props.message.sentAt;
-  const time = at === undefined ? null : raw(formatOrgTime(at));
+// The hour sits on the answer line; a handoff keeps it as the start of its "to agent" line.
+const userMeta = computed<I18nText | null>(() => {
   const who = props.message.author ? raw(props.message.author) : null;
-  const meta = who && time ? t("assistant.message.meta", { who, time }) : (who ?? time ?? raw(""));
   const { handoffFrom, agentId } = props.message;
-  if (!handoffFrom || !agentId) return meta;
+  if (!handoffFrom || !agentId) return who;
+  const at = props.message.sentAt;
+  const meta = who ?? (at === undefined ? raw("") : raw(formatOrgTime(at)));
   return t("assistant.message.metaHandoff", { meta, agent: agentName(agentId, t) });
+});
+
+// An answer record carries no time of its own, so it shows when its question was sent.
+const answerTime = computed<I18nText | null>(() => {
+  const at = props.message.sentAt ?? props.turn?.prompt?.sentAt;
+  return at === undefined ? null : raw(formatOrgTime(at));
 });
 
 const rerunRange = computed(() => {
@@ -686,14 +701,6 @@ const lastQueryId = computed(() => {
   }
   return last;
 });
-
-const feedbackShown = computed(
-  () =>
-    !props.readonly &&
-    !!props.turn?.sid &&
-    (props.turn.outcome === "done" || props.turn.outcome === "done_not_saved") &&
-    !!footerOf(props.message),
-);
 
 const fences = new Map<string, QueryBlock | null>();
 

@@ -76,6 +76,9 @@ const text = (wrapper: ReturnType<typeof mountStatus>) =>
 const timer = (wrapper: ReturnType<typeof mountStatus>) =>
   wrapper.find('[data-test="assistant-turn-status-elapsed"]');
 
+const seconds = (wrapper: ReturnType<typeof mountStatus>) =>
+  timer(wrapper).text().replace(/^·\s*/, "");
+
 describe("AssistantTurnStatus", () => {
   afterEach(() => vi.useRealTimers());
 
@@ -122,13 +125,14 @@ describe("AssistantTurnStatus", () => {
     };
     const early = mountStatus(tool, { now: 4_000, meta: { lastFrameAt: 4_000 } });
     expect(text(early)).toBe("Querying default");
-    expect(timer(early).text()).toBe("4 s");
+    expect(timer(early).text()).toBe("· 4 s");
     expect(timer(early).classes()).toEqual(
-      expect.arrayContaining(["tabular-nums", "whitespace-nowrap", "min-w-[11ch]"]),
+      expect.arrayContaining(["tabular-nums", "whitespace-nowrap"]),
     );
+    expect(timer(early).classes()).not.toContain("ms-auto");
     const later = mountStatus(tool, { now: 12_000, meta: { lastFrameAt: 12_000 } });
     expect(text(later)).toBe("Querying default");
-    expect(timer(later).text()).toBe("12 s");
+    expect(seconds(later)).toBe("12 s");
     const stalled = mountStatus(tool, { now: 31_000 });
     expect(text(stalled)).toBe("No response for 31 s");
     expect(stalled.attributes("data-tone")).toBe("warning");
@@ -198,7 +202,7 @@ describe("AssistantTurnStatus", () => {
       meta: { startedAt: 0, stateEnteredAt: 32_000, lastFrameAt: 39_000 },
     });
     expect(text(wrapper)).toBe("Thinking");
-    expect(timer(wrapper).text()).toBe("40 s");
+    expect(seconds(wrapper)).toBe("40 s");
   });
 
   it("stalls from the last data frame, so only a turn sending nothing but keepalives warns (R5)", () => {
@@ -213,6 +217,19 @@ describe("AssistantTurnStatus", () => {
       meta: { startedAt: 0, lastFrameAt: 0, lastByteAt: 40_000 },
     });
     expect(text(silent)).toBe("No response for 40 s");
+  });
+
+  it("shows no timer under 3 s and the app's dots spinner in a hidden slot while it works", () => {
+    const thinking: TurnState = { state: "responding.thinking" };
+    const fresh = mountStatus(thinking, { now: 2_999, meta: { lastFrameAt: 2_999 } });
+    expect(timer(fresh).exists()).toBe(false);
+    expect(seconds(mountStatus(thinking, { now: 3_000, meta: { lastFrameAt: 3_000 } }))).toBe(
+      "3 s",
+    );
+    const spinner = fresh.get('[data-test="assistant-turn-status-spinner"]');
+    expect(spinner.findAll(".animate-bounce")).toHaveLength(3);
+    expect(spinner.element.parentElement?.getAttribute("aria-hidden")).toBe("true");
+    expect(spinner.element.parentElement?.className).toContain("motion-reduce:**:animate-none");
   });
 
   it("pauses with no motion while the turn waits on the user (HT-01 AC 4)", () => {
@@ -263,11 +280,11 @@ describe("AssistantTurnStatus", () => {
           now: () => now,
         },
       });
-      expect(timer(wrapper).text()).toBe("6 s");
+      expect(seconds(wrapper)).toBe("6 s");
       now = 7_000;
       await vi.advanceTimersByTimeAsync(1_000);
       expect(text(wrapper)).toBe("Thinking");
-      expect(timer(wrapper).text()).toBe("7 s");
+      expect(seconds(wrapper)).toBe("7 s");
       await wrapper.setProps({ turn: { state: "done", saved: "server" } });
       expect(vi.getTimerCount()).toBe(0);
     });

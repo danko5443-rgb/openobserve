@@ -39,8 +39,8 @@ vi.mock("./AssistantMessageActions.vue", () => ({
   __esModule: true,
   default: {
     name: "ActionsStub",
-    props: ["mode"],
-    template: "<div :data-test=\"`actions-stub-${mode ?? 'bar'}`\" />",
+    props: ["fresh"],
+    template: '<div data-test="actions-stub-bar" />',
   },
 }));
 
@@ -121,6 +121,30 @@ const log = (wrapper: ReturnType<typeof mountLive>["wrapper"]) =>
 describe("AssistantTranscript", () => {
   afterEach(() => {
     document.body.innerHTML = "";
+  });
+
+  it("names a stale answer's Re-run by its step window's length, as the rerun applier takes it", async () => {
+    const to = Date.now() - 3 * 3_600_000;
+    const query = {
+      type: "tool_call" as const,
+      tool: "SearchSQL",
+      call_id: "c1",
+      stepState: "done" as const,
+      callArgs: {
+        stream_name: "app",
+        sql: "SELECT 1",
+        start_time: (to - 900_000) * 1000,
+        end_time: to * 1000,
+      },
+    };
+    const { wrapper } = mountLive(
+      liveSession([prompt("why 5xx?", "t1"), reply("Because.", [query])]),
+    );
+    await flushPromises();
+    const fresh = wrapper.findComponent({ name: "ActionsStub" }).props("fresh") as {
+      range: string;
+    };
+    expect(String(fresh.range)).toBe("the last 15 min");
   });
 
   it("is the one named log, masked, focusable as a scroll region and silent (`95` §1, HT-10 AC 1)", () => {
@@ -405,20 +429,18 @@ describe("AssistantTranscript", () => {
     );
   });
 
-  it("shows the action bars only on a settled live chat; a running turn keeps the prompt bar's room, inert (H3)", async () => {
+  it("shows the answer buttons on a settled answer only, never on the prompt, and drops it while a turn runs (H3)", async () => {
     const session = liveSession([prompt("q", "t1"), reply("a")]);
     const { wrapper } = mountLive(session);
     await flushPromises();
-    expect(wrapper.findAll('[data-test="actions-stub-bar"]')).toHaveLength(2);
-    session.turn = { state: "responding.writing" };
-    await flushPromises();
-    const held = wrapper.findAll('[data-test="assistant-prompt-actions"]');
-    expect(held).toHaveLength(1);
-    expect(held[0].classes()).toContain("invisible");
-    expect(held[0].attributes("inert")).toBeDefined();
+    const bars = wrapper.findAll('[data-test="actions-stub-bar"]');
+    expect(bars).toHaveLength(1);
     expect(
       wrapper.find('[data-test="assistant-answer-t1"] [data-test="actions-stub-bar"]').exists(),
-    ).toBe(false);
+    ).toBe(true);
+    session.turn = { state: "responding.writing" };
+    await flushPromises();
+    expect(wrapper.find('[data-test="actions-stub-bar"]').exists()).toBe(false);
   });
 
   it("switches the shown attempt through the version picker (`30` §8.2)", async () => {
@@ -526,7 +548,9 @@ describe("AssistantTranscript: agents (MULTI-AGENT-03, 04, 05)", () => {
     expect(wrapper.find('[data-test="assistant-handoff-marker"]').exists()).toBe(false);
     const row = wrapper.get('[data-code="handoff_failed"]');
     expect(row.text()).toContain("Couldn't hand this chat to Investigator.");
-    expect(row.get('[data-test="assistant-turn-outcome-action"]').text()).toBe("Try again");
+    expect(row.get('[data-test="assistant-turn-outcome-action"]').attributes("aria-label")).toBe(
+      "Try again",
+    );
     expect(row.find('[data-test="assistant-turn-outcome-agent-fallback"]').exists()).toBe(true);
   });
 

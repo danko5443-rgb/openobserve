@@ -15,13 +15,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <section
-    ref="root"
+  <OCard
+    ref="card"
+    variant="outlined"
+    role="region"
     :aria-label="regionName"
     data-dd-privacy="mask"
     data-test="assistant-diff-block"
     :data-mode="view"
-    class="bg-surface-base border-border-default rounded-default flex min-h-0 flex-col overflow-hidden border max-md:fixed max-md:inset-x-0 max-md:top-14 max-md:bottom-14 max-md:rounded-none max-md:border-x-0"
+    class="min-h-0 overflow-hidden max-md:fixed max-md:inset-x-0 max-md:top-14 max-md:bottom-14 max-md:rounded-none max-md:border-x-0"
   >
     <div
       :class="[
@@ -127,7 +129,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         >
       </li>
     </ol>
-  </section>
+  </OCard>
 </template>
 
 <script lang="ts">
@@ -153,6 +155,7 @@ import { registerEscapeRung, stopLadderEscape, useAssistantName } from "@/compos
 import { PROPOSAL_LANGUAGE_NAMES, diffLines } from "@/composables/assistant/pure";
 import useBreakpoint from "@/composables/useBreakpoint";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OCard from "@/lib/core/Card/OCard.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
@@ -181,7 +184,8 @@ const props = withDefaults(defineProps<AssistantDiffBlockProps>(), { reserveEnd:
 const { t } = useI18nTyped();
 const { product } = useAssistantName();
 const { mdUp, lgUp } = useBreakpoint();
-const root = ref<HTMLElement | null>(null);
+const card = ref<InstanceType<typeof OCard> | null>(null);
+const root = computed(() => (card.value?.$el as HTMLElement | undefined) ?? null);
 const editorHost = ref<HTMLElement | null>(null);
 const rejectButton = ref<InstanceType<typeof OButton> | null>(null);
 const monacoReady = ref(false);

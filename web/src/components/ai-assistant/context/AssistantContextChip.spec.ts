@@ -40,18 +40,42 @@ describe("AssistantContextChip", () => {
     const root = wrapper.get('[data-test="assistant-context-chip-log_row"]');
     expect(root.attributes("data-state")).toBe("sent");
     const button = wrapper.get('[data-test="assistant-context-chip-button"]');
-    expect(button.element.tagName).toBe("BUTTON");
+    expect(button.element.tagName).toBe("SPAN");
+    expect(button.attributes("role")).toBe("button");
+    expect(button.attributes("tabindex")).toBe("0");
     expect(button.attributes("aria-label")).toBe("Log row · cart · 13:57, default");
     expect(button.classes()).toContain("rounded-default");
   });
 
-  it("has a named remove button, separate from the chip (CT-02 AC 12)", async () => {
+  it("has a named remove button inside the pill (CT-02 AC 12)", async () => {
     const wrapper = mountChip();
     const remove = wrapper.get('[data-test="assistant-context-chip-remove"]');
     expect(remove.attributes("aria-label")).toBe("Remove Log row · cart · 13:57 from context");
-    expect(remove.classes()).toContain("max-md:size-11");
+    expect(
+      wrapper.get('[data-test="assistant-context-chip-button"]').element.contains(remove.element),
+    ).toBe(true);
     await remove.trigger("click");
     expect(wrapper.emitted("remove")).toHaveLength(1);
+    expect(wrapper.emitted("open")).toBeUndefined();
+  });
+
+  it("removes, not opens, on Enter or Space on the remove button", async () => {
+    const wrapper = mountChip();
+    const remove = wrapper.get('[data-test="assistant-context-chip-remove"]');
+    await remove.trigger("keydown", { key: "Enter" });
+    await remove.trigger("keydown", { key: " " });
+    expect(wrapper.emitted("remove")).toHaveLength(2);
+    expect(wrapper.emitted("open")).toBeUndefined();
+  });
+
+  it("shows an image chip's thumbnail in place of the kind icon", () => {
+    const wrapper = mountChip({
+      chip: { ...ROW, kind: "image", label: raw("shot.png") },
+      imageSrc: "data:image/png;base64,AAAA",
+    });
+    const thumb = wrapper.get('[data-test="assistant-context-chip-thumb"]');
+    expect(thumb.attributes("src")).toBe("data:image/png;base64,AAAA");
+    expect(thumb.classes()).toContain("size-4");
   });
 
   it("removes on Delete and Backspace and moves on the arrows (CT-01 AC 11, CT-08 AC 4)", async () => {

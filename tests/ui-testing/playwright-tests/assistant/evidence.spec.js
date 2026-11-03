@@ -40,18 +40,6 @@ test.describe("assistant evidence", () => {
     return sent;
   }
 
-  async function settledScroll(page) {
-    let last = -1;
-    await expect
-      .poll(async () => {
-        const top = await assistant.transcript().evaluate((el) => el.scrollTop);
-        const same = top === last;
-        last = top;
-        return same;
-      }, { intervals: [250] })
-      .toBe(true);
-  }
-
   test.beforeEach(async ({ context, page }) => {
     harness = await loadHarness();
     await harness.setFlag(context, true);
@@ -176,7 +164,6 @@ test.describe("assistant evidence", () => {
     await expect(assistant.answer().locator('[data-test="assistant-step-call_e1"]')).toHaveText(
       "Query failed · Search field not found: latency",
     );
-    await expect(assistant.answer().locator('[data-test="assistant-feedback"]')).toHaveCount(0);
   });
 
   test("EVID-08 a navigation frame becomes a link card that opens only on its click", { tag: ["@mock"] }, async ({ page }) => {
@@ -192,30 +179,6 @@ test.describe("assistant evidence", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("type")).toBe("ai_chat_query");
     expect(new URL(page.url()).searchParams.get("stream")).toBe("default");
     await expect(card.locator('[data-test="assistant-link-card-outcome"]')).toHaveText(/^Opened · /);
-  });
-
-  test("EVID-09 feedback renders only on a done answer and carries that turn's trace id", { tag: ["@mock"] }, async ({ page }) => {
-    await openOnLogs(page);
-    const feedback = [];
-    await page.route(/\/ai\/feedback$/, async (route) => {
-      feedback.push(JSON.parse(route.request().postData() ?? "{}"));
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-    });
-    await ask(page, "complete");
-    const down = assistant.answer().locator('[data-test="assistant-feedback-down"]');
-    // The popover closes on any scroll of its trigger's container, so the smooth scroll that brings the thumb into view must end first.
-    await down.scrollIntoViewIfNeeded();
-    await settledScroll(page);
-    await down.click();
-    const panel = page.locator('[data-test="assistant-feedback-reason"]');
-    await expect(panel).toBeVisible();
-    await panel.locator('[data-test="assistant-feedback-reason-wrong_query"]').click();
-    await panel.locator('[data-test="assistant-feedback-send"]').click();
-    await expect(assistant.answer().locator('[data-test="assistant-feedback-thanks"]')).toHaveText("Thanks for the feedback");
-    expect(feedback).toEqual([
-      expect.objectContaining({ feedback_type: "thumbs_down", trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", query_index: 0, comment: "wrong_query" }),
-    ]);
-    await expect(down).toHaveAttribute("aria-pressed", "true");
   });
 
   test("SEC-10 link targets are typed: the route of resource_type, the session's org, chatId only", { tag: ["@mock"] }, async ({ page }) => {

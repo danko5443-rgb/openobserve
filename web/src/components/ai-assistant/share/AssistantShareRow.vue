@@ -148,12 +148,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       data-test="assistant-share-manager-row-expiry-select"
       @update:model-value="changeExpiry"
     />
-    <div
+    <OCard
       v-else-if="confirm"
-      ref="confirmEl"
+      ref="confirmCard"
+      variant="outlined"
       role="group"
       :aria-label="confirmText"
-      class="border-border-default rounded-default flex flex-col gap-2 border p-3"
+      class="gap-2 p-3"
       data-test="assistant-share-manager-row-confirm"
     >
       <OText variant="body">{{ confirmText }}</OText>
@@ -178,7 +179,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           >{{ t("common.cancel") }}</OButton
         >
       </div>
-    </div>
+    </OCard>
   </li>
 </template>
 
@@ -219,6 +220,7 @@ import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import useBreakpoint from "@/composables/useBreakpoint";
 import OTag from "@/lib/core/Badge/OTag.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OCard from "@/lib/core/Card/OCard.vue";
 import OTimeCell from "@/lib/core/Table/cells/OTimeCell.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
@@ -256,7 +258,8 @@ const { mdUp } = useBreakpoint();
 
 const pending = ref<ShareRowAction | null>(null);
 const confirm = ref<"tools" | "revoke" | "expiry" | null>(null);
-const confirmEl = ref<HTMLElement | null>(null);
+const confirmCard = ref<InstanceType<typeof OCard> | null>(null);
+const confirmEl = computed(() => (confirmCard.value?.$el as HTMLElement | undefined) ?? null);
 const titleEl = ref<ComponentPublicInstance | HTMLElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
 

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import type { FloatingWindow, WindowCorner, WindowGeometry } from "./assistantStore.types";
+import type { FloatingWindow, WindowGeometry } from "./assistantStore.types";
 
 export const MAX_FLOATING_CHATS = 4;
 
@@ -57,8 +57,6 @@ const DROP_ZONE_REM = 3;
 const WIDE_VIEWPORT_REM = 80;
 
 const LG_VIEWPORT_REM = 64;
-
-const CORNERS: readonly WindowCorner[] = ["top-start", "top-end", "bottom-start", "bottom-end"];
 
 /** The page area in rem from the viewport's start and top edges; a window never leaves it. */
 export interface PageArea {
@@ -233,16 +231,6 @@ export function resizeRect(
     x: west ? start.x + start.w - w : start.x,
     y: north ? start.y + start.h - h : start.y,
   };
-}
-
-/** The corners a window can move to, its current one left out. */
-export function otherCorners(current: WindowCorner): WindowCorner[] {
-  return CORNERS.filter((corner) => corner !== current);
-}
-
-/** The geometry of a window parked 1 rem in from `corner` at its current size. */
-export function atCorner(geometry: WindowGeometry, corner: WindowCorner): WindowGeometry {
-  return { ...geometry, corner, dxRem: WINDOW_INSET_REM, dyRem: WINDOW_INSET_REM };
 }
 
 /** True when `outer` hides the whole of `inner`; a part left showing still takes the focus ring. */

@@ -25,42 +25,52 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     @update:open="setOpen"
   >
     <template #trigger>
-      <OButton
-        variant="ghost"
-        size="chip"
+      <OTag
+        type="assistantContext"
+        :label="text"
+        :icon="assistantGlyph.chipTime"
+        clickable
         :disabled="disabled"
         :aria-label="name"
         aria-haspopup="dialog"
         :aria-expanded="open"
-        :class="['text-text-secondary shrink-0', TOUCH_TARGET_CLASS]"
+        class="shrink-0 motion-safe:transition-colors max-md:min-h-11 pointer-coarse:min-h-11"
         data-test="assistant-context-chip-time"
-      >
-        <OIcon :name="assistantGlyph.chipTime" size="xs" />
-        <span class="whitespace-nowrap">{{ text }}</span>
-      </OButton>
+      />
     </template>
-    <div role="menu" class="flex flex-col gap-0.5" data-test="assistant-context-time-picker">
-      <AssistantMenuRow
-        v-if="pageWindow"
-        :label="t('assistant.composer.mention.pageTime')"
-        :meta="textOf(pageWindow)"
-        :selected="window.source === 'page'"
-        data-test="assistant-context-time-page"
-        @click="pick(null)"
-      />
-      <AssistantMenuRow
-        v-for="period in PERIODS"
-        :key="period"
-        :label="periodLabel(period)"
-        :meta="
-          period === DEFAULT_PERIOD && !pageWindow
-            ? t('assistant.context.time.source.default')
-            : undefined
-        "
-        :selected="isSelected(period)"
-        :data-test="`assistant-context-time-${period}`"
-        @click="pickPeriod(period)"
-      />
+    <div class="flex flex-col gap-0.5" data-test="assistant-context-time-picker">
+      <div
+        ref="group"
+        role="radiogroup"
+        tabindex="-1"
+        :aria-label="t('assistant.context.time.swap')"
+        class="flex flex-col gap-0.5"
+        @keydown="onGroupKeydown"
+      >
+        <AssistantMenuRow
+          v-if="pageWindow"
+          :label="t('assistant.composer.mention.pageTime')"
+          :meta="textOf(pageWindow)"
+          :selected="window.source === 'page'"
+          :tabbable="tabbableId === 'page'"
+          data-test="assistant-context-time-page"
+          @click="pick(null)"
+        />
+        <AssistantMenuRow
+          v-for="period in PERIODS"
+          :key="period"
+          :label="periodLabel(period)"
+          :meta="
+            period === DEFAULT_PERIOD && !pageWindow
+              ? t('assistant.context.time.source.default')
+              : undefined
+          "
+          :selected="isSelected(period)"
+          :tabbable="tabbableId === period"
+          :data-test="`assistant-context-time-${period}`"
+          @click="pickPeriod(period)"
+        />
+      </div>
       <ODateTimeRange
         v-bind="pickerValue"
         :timezone="timezone"
@@ -129,14 +139,12 @@ const LETTER_OF: Record<RelativeUnit, string> = {
 import { computed, ref } from "vue";
 
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
-import { TOUCH_TARGET_CLASS } from "@/components/ai-assistant/common/touchTarget";
 import {
   composerPopoverClass,
   useComposerLayout,
 } from "@/components/ai-assistant/composer/composerUi";
 import { periodMs, timeRangeShortText } from "@/composables/assistant";
-import OButton from "@/lib/core/Button/OButton.vue";
-import OIcon from "@/lib/core/Icon/OIcon.vue";
+import OTag from "@/lib/core/Badge/OTag.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import ODateTimeRange from "@/lib/forms/DateTimeRange/ODateTimeRange.vue";
 import type {
@@ -162,6 +170,7 @@ const { t } = useI18nTyped();
 const layout = useComposerLayout();
 const open = ref(false);
 const reversed = ref(false);
+const group = ref<HTMLElement | null>(null);
 
 const text = computed(() => textOf(props.window));
 const name = computed(() =>
@@ -189,6 +198,14 @@ const pickerValue = computed(() => {
     endDate: at(props.window.to, "YYYY-MM-DD"),
     endTime: at(props.window.to, "HH:mm"),
   };
+});
+
+// Roving tabindex: Tab reaches the checked row, or the first row when a custom range is set.
+const tabbableId = computed(() => {
+  if (props.pageWindow && props.window.source === "page") return "page";
+  const checked = PERIODS.find((period) => isSelected(period));
+  if (checked) return checked;
+  return props.pageWindow ? "page" : PERIODS[0];
 });
 
 function textOf(window: TimeWindow): I18nText {
@@ -237,5 +254,23 @@ function onPick(value: DateTimeRangeValue): void {
   const to = ms(value.endDate, value.endTime);
   reversed.value = !(from > 0 && to > from);
   if (!reversed.value) pick({ from, to });
+}
+
+// Arrows move focus only; picking a row applies it and closes the picker, so selection cannot follow focus.
+function onGroupKeydown(event: KeyboardEvent): void {
+  const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+  const isEdge = event.key === "Home" || event.key === "End";
+  if (!step && !isEdge) return;
+  const rows = Array.from(group.value?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []);
+  if (!rows.length) return;
+  event.preventDefault();
+  const at = rows.indexOf(document.activeElement as HTMLElement);
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? rows.length - 1
+        : (Math.max(at, 0) + (step ?? 0) + rows.length) % rows.length;
+  rows[next].focus();
 }
 </script>

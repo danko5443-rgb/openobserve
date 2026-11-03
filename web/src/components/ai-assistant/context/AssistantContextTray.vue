@@ -50,6 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               :chip="chip"
               compact
               :short-label="chip.short"
+              :image-src="imageSrcOf(chip)"
               :expanded="openId === chip.id"
               @open="openChip(chip)"
               @remove="remove(chip)"

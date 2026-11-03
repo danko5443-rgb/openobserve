@@ -18,7 +18,6 @@ import { describe, expect, it } from "vitest";
 import type { FloatingWindow } from "./assistantStore.types";
 import {
   TRAY_FOOTPRINT_REM,
-  atCorner,
   cascadeGeometry,
   clampRect,
   coversFully,
@@ -27,7 +26,6 @@ import {
   geometryOf,
   intersects,
   openWindowCap,
-  otherCorners,
   rectOf,
   resizeRect,
   sizeLimits,
@@ -82,16 +80,6 @@ describe("placement", () => {
       { x: 60, y: 25, w: 24, h: 30 },
     ])
       expect(rectOf(geometryOf(rect, AREA), AREA)).toEqual(rect);
-  });
-
-  it("parks at a corner at the current size and lists the other three", () => {
-    expect(atCorner(defaultGeometry(), "top-start")).toMatchObject({
-      corner: "top-start",
-      dxRem: 1,
-      dyRem: 1,
-      wRem: 24,
-    });
-    expect(otherCorners("bottom-end")).toEqual(["top-start", "top-end", "bottom-start"]);
   });
 });
 

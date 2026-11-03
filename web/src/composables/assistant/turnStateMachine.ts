@@ -145,6 +145,29 @@ const STEP_KEYS: Record<string, I18nKey> = {
   StreamList: "assistant.step.StreamList",
   SearchPromQL: "assistant.step.SearchPromQL",
   TraceSearch: "assistant.step.TraceSearch",
+  ListIncidents: "assistant.step.ListIncidents",
+  ListAlerts: "assistant.step.ListAlerts",
+  SearchAlerts: "assistant.step.SearchAlerts",
+  GetAlert: "assistant.step.GetAlert",
+  GetAlertHistory: "assistant.step.GetAlertHistory",
+  ListDestinations: "assistant.step.ListDestinations",
+  ListDashboards: "assistant.step.ListDashboards",
+  GetDashboard: "assistant.step.GetDashboard",
+  GetLatestTraces: "assistant.step.GetLatestTraces",
+  GetCurrentServiceGraphTopology: "assistant.step.GetCurrentServiceGraphTopology",
+};
+
+const STEP_DONE_KEYS: Record<string, I18nKey> = {
+  ListIncidents: "assistant.steps.step.tools.ListIncidents",
+  ListAlerts: "assistant.steps.step.tools.ListAlerts",
+  SearchAlerts: "assistant.steps.step.tools.SearchAlerts",
+  GetAlert: "assistant.steps.step.tools.GetAlert",
+  GetAlertHistory: "assistant.steps.step.tools.GetAlertHistory",
+  ListDestinations: "assistant.steps.step.tools.ListDestinations",
+  ListDashboards: "assistant.steps.step.tools.ListDashboards",
+  GetDashboard: "assistant.steps.step.tools.GetDashboard",
+  GetLatestTraces: "assistant.steps.step.tools.GetLatestTraces",
+  GetCurrentServiceGraphTopology: "assistant.steps.step.tools.GetCurrentServiceGraphTopology",
 };
 
 const TARGETED_STEPS: ReadonlySet<string> = new Set(["SearchSQL", "StreamSchema"]);
@@ -294,11 +317,32 @@ export function stepLabel(
   tool: string,
   target: string | null,
 ): { key: I18nKey; params: Record<string, unknown> } {
-  const key = STEP_KEYS[tool];
-  if (key && (!TARGETED_STEPS.has(tool) || target)) return { key, params: { stream: target } };
+  const name = tool.replace(/^o2_/, "");
+  const key = STEP_KEYS[name];
+  if (key && (!TARGETED_STEPS.has(name) || target)) return { key, params: { stream: target } };
   const verb = mutationVerb(tool);
   if (verb && target) return { key: `assistant.step.${verb}`, params: { resource: target } };
-  return { key: "assistant.step.fallback", params: { tool } };
+  return { key: "assistant.step.fallback", params: { tool: toolWords(tool) } };
+}
+
+/** The finished row of a tool with no verb of its own: "Listed incidents", else "Ran get widget". */
+export function stepDoneLabel(tool: string): { key: I18nKey; params: Record<string, unknown> } {
+  const key = STEP_DONE_KEYS[tool.replace(/^o2_/, "")];
+  return key
+    ? { key, params: {} }
+    : { key: "assistant.steps.step.ranTool", params: { tool: toolWords(tool) } };
+}
+
+/** A tool name as words, so no row reads a raw identifier: "o2_GetAlertHistory" is "get alert history". */
+export function toolWords(tool: string): string {
+  return tool
+    .replace(/^o2_/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => (/^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase()))
+    .join(" ");
 }
 
 /** The step label of a stored `tool_call` block, read from its context as the live status row reads its frame. */

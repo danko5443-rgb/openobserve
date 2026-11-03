@@ -124,22 +124,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               </OText>
             </li>
           </ul>
-          <dl
+          <ODescriptionList
             v-if="diff.length"
-            class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs"
+            dense
+            class="w-full min-w-0"
             data-test="assistant-approval-diff"
           >
-            <template v-for="row in diff" :key="row.field">
-              <dt class="text-text-secondary break-all">{{ row.field }}</dt>
-              <dd class="text-text-body font-mono break-all">
+            <ODescriptionItem v-for="row in diff" :key="row.field" :label="row.field">
+              <span class="font-mono text-xs break-all">
                 <template v-if="row.before">
                   <s class="text-text-secondary">{{ row.before }}</s>
                   {{ raw("→") }}
                 </template>
                 {{ row.value }}
-              </dd>
-            </template>
-          </dl>
+              </span>
+            </ODescriptionItem>
+          </ODescriptionList>
           <ul
             v-if="impact.length"
             class="text-text-body flex min-w-0 list-disc flex-col gap-0.5 ps-4 text-xs"
@@ -304,6 +304,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script lang="ts">
+function compactId(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function valueText(value: unknown): string {
   if (value === undefined) return "—";
   return typeof value === "string" ? value : JSON.stringify(value);
@@ -353,6 +357,8 @@ import OCollapsible from "@/lib/core/Collapsible/OCollapsible.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OSelect from "@/lib/forms/Select/OSelect.vue";
+import ODescriptionItem from "@/lib/lists/DescriptionList/ODescriptionItem.vue";
+import ODescriptionList from "@/lib/lists/DescriptionList/ODescriptionList.vue";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
 import { formatOrgTime } from "@/utils/formatters";
 
@@ -441,8 +447,20 @@ const planned = computed(
 const count = computed(() =>
   planned.value && props.card.editable ? selected.value.length : total.value,
 );
+// A target named after the tool id carries no name the reader knows, only the verb again in code form.
+const toolNamed = computed(() => {
+  const name = approvalName(props.card);
+  const tool = props.card.tool;
+  return (
+    !!name && [tool, tool.replace(/^[^_]+_/, "")].some((id) => compactId(id) === compactId(name))
+  );
+});
 const heading = computed(() => {
-  const text = approvalHeading(t, props.card, count.value);
+  const verb = approvalVerb(props.card);
+  const text =
+    toolNamed.value && verb && verb !== "delete"
+      ? approvalVerbText(t, props.card)
+      : approvalHeading(t, props.card, count.value);
   return question.value ? raw(stripClaimMarkers(text)) : text;
 });
 const groupName = computed(() =>
@@ -516,7 +534,7 @@ const diff = computed(() => {
 
 // The name could not be resolved, so the id is said once here and never in the heading (D3-n).
 const nameUnknown = computed<I18nText | null>(() => {
-  if (!isApprovalChange(props.card) || approvalName(props.card)) return null;
+  if (!isApprovalChange(props.card) || (approvalName(props.card) && !toolNamed.value)) return null;
   const id = approvalObjectId(props.card);
   if (!id) return null;
   const shortId = id.length > SHORT_ID_CHARS ? `${id.slice(0, SHORT_ID_CHARS)}…` : id;

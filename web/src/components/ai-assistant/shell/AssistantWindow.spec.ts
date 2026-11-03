@@ -213,23 +213,55 @@ describe("AssistantWindow", () => {
     expect(wrapper.find('[data-test="assistant-window-close"]').exists()).toBe(true);
   });
 
-  it("shows the grip only in keyboard mode; arrows move, Enter places (B95)", async () => {
+  it("keeps a focusable grip; arrows move, Shift+arrows resize, Enter places (B95)", async () => {
     const { wrapper, store, sid } = setup();
-    expect(wrapper.find('[data-test="assistant-window-grip"]').exists()).toBe(false);
-    await (wrapper.vm as unknown as { startMode(m: string): Promise<void> }).startMode("move");
-    await flushPromises();
     const grip = wrapper.get('[data-test="assistant-window-grip"]');
     expect(grip.attributes("data-o2-btn")).toBeDefined();
-    expect(wrapper.get('[data-test="assistant-window-move-mode"]').text()).toContain("Arrows move");
+    expect(grip.attributes("aria-label")).toContain("Move");
+    expect(wrapper.find('[data-test="assistant-window-move-mode"]').exists()).toBe(false);
     await grip.trigger("keydown", { key: "ArrowLeft" });
-    await grip.trigger("keydown", { key: "ArrowUp", shiftKey: true });
+    await grip.trigger("keydown", { key: "ArrowUp" });
     await nextTick();
-    expect(vars(wrapper).slice(0, 2)).toEqual([64, 19]);
+    expect(wrapper.emitted("mode-started")).toEqual([["move"]]);
+    expect(wrapper.get('[data-test="assistant-window-move-mode"]').text()).toContain("Arrows move");
+    expect(vars(wrapper).slice(0, 2)).toEqual([64, 22]);
+    const size = vars(wrapper).slice(2, 4);
+    await grip.trigger("keydown", { key: "ArrowLeft", shiftKey: true });
+    await nextTick();
+    expect(wrapper.emitted("mode-started")).toEqual([["move"], ["resize"]]);
+    expect(grip.attributes("aria-label")).toContain("Resize");
+    expect(vars(wrapper)[2]).toBe(size[0] - 1);
     await grip.trigger("keydown", { key: "Enter" });
     await nextTick();
-    expect(wrapper.find('[data-test="assistant-window-grip"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="assistant-window-move-mode"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="assistant-window-grip"]').exists()).toBe(true);
     expect(wrapper.emitted("announce")).toEqual([["windowPlaced"]]);
-    expect(store.windowOf(sid).geometry.dxRem).toBe(2);
+    expect(store.windowOf(sid).geometry).toMatchObject({ dxRem: 3, wRem: size[0] - 1 });
+  });
+
+  it("caps a resize at the page's bottom gap instead of moving the window up", async () => {
+    const { wrapper } = setup();
+    const grip = wrapper.get('[data-test="assistant-window-grip"]');
+    const [, y] = vars(wrapper);
+    await grip.trigger("keydown", { key: "ArrowDown", shiftKey: true });
+    await grip.trigger("keydown", { key: "ArrowDown", shiftKey: true });
+    await nextTick();
+    expect(vars(wrapper)[1]).toBe(y);
+    expect(vars(wrapper)[1] + vars(wrapper)[3]).toBe(AREA.bottom - 0.5);
+    const edge = wrapper.get('[data-resize-edge="s"]').element;
+    await pointer(wrapper, "pointerdown", [500, 900], edge);
+    await pointer(wrapper, "pointermove", [500, 1200]);
+    expect(vars(wrapper)[1]).toBe(y);
+    expect(vars(wrapper)[1] + vars(wrapper)[3]).toBe(AREA.bottom - 0.5);
+  });
+
+  it("keeps the window 8 px inside every edge of the page", async () => {
+    const { wrapper } = setup();
+    const grip = wrapper.get('[data-test="assistant-window-grip"]');
+    for (let i = 0; i < 80; i++) await grip.trigger("keydown", { key: "ArrowLeft" });
+    for (let i = 0; i < 30; i++) await grip.trigger("keydown", { key: "ArrowUp" });
+    await nextTick();
+    expect(vars(wrapper).slice(0, 2)).toEqual([AREA.start + 0.5, AREA.top + 0.5]);
   });
 
   it("restores the geometry on rung e and stays in the window", async () => {

@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         :placement="sheet ? 'sheet' : placement"
         :container="container"
         :narrow="narrow"
+        :layout-direct="onlyFullPage"
       >
         <template #container-actions="{ narrow }">
           <AssistantLayoutMenu
@@ -55,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           />
           <slot name="container-actions" />
           <AssistantIconButton
-            v-if="placement !== 'window'"
+            v-if="closable"
             :label="t('assistant.shell.close', { product })"
             :icon="assistantGlyph.close"
             data-test="assistant-shell-close"
@@ -63,7 +64,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           />
         </template>
         <template #menu-layout>
+          <ODropdownItem
+            v-if="onlyFullPage"
+            :icon-left="assistantGlyph.openFull"
+            data-test="assistant-shell-place-full"
+            @select="sheetToFull"
+          >
+            {{ t("assistant.shell.placeFull") }}
+          </ODropdownItem>
           <AssistantLayoutMenu
+            v-else
             bare
             :placement="placement"
             :sheet="sheet"
@@ -75,7 +85,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <AssistantShareControl
             :sid="activeSid"
             variant="menu-item"
-            @open-quick="shareQuickOpen = true"
+            @open-quick="openQuickShare"
             @settings="shareDrawerOpen = true"
           />
         </template>
@@ -85,6 +95,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             :sid="activeSid"
             variant="quick"
             @settings="openShareDrawer"
+            @dismissed="threadHeader?.focusChats()"
           />
         </template>
       </AssistantThreadHeader>
@@ -113,7 +124,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           />
           <slot name="container-actions" />
           <AssistantIconButton
-            v-if="placement !== 'window'"
+            v-if="closable"
             :label="t('assistant.shell.close', { product })"
             :icon="assistantGlyph.close"
             data-test="assistant-shell-close"
@@ -667,6 +678,9 @@ export const SHELL_ROUTE_CONTEXT: InjectionKey<ShellRouteContext> = Symbol("assi
 /** Tool-step announcements are spaced at least this far apart (`95` §2.2). */
 export const STEP_ANNOUNCE_MS = 3_000;
 
+// Longer than the menu's exit animation, so a menu that never hands focus back still opens the share popover.
+const MENU_FOCUS_RETURN_MS = 400;
+
 // Every mounted shell sees one history outcome; only the first visible one speaks it.
 const historySpoken = new WeakMap<object, number>();
 
@@ -911,8 +925,11 @@ const container = computed<Container>(() => {
   return props.placement === "docked" && props.host ? `docked.${props.host.id}` : "sidebar";
 });
 
+// A window closes from its own title bar, and the full page is left by navigating.
+const closable = computed(() => props.placement !== "window" && props.placement !== "full");
+
 const chromeClasses = computed(() => {
-  const base = "border-border-subtle flex shrink-0 items-center gap-1 border-b ps-1 pe-2";
+  const base = "border-border-default flex shrink-0 items-center gap-1 border-b ps-1 pe-2";
   if (props.placement === "window")
     return [
       base,
@@ -928,6 +945,8 @@ const readingWidth = computed(() =>
 );
 // The Chats view hides the chat instead of unmounting it, so its draft, scroll and stream carry on.
 const chatsOpen = ref(false);
+// The phone sheet's only move is to the full page, so its menus show that move directly.
+const onlyFullPage = computed(() => props.sheet && props.placement === "sidebar");
 provide(assistantThreadHostKey, {
   newChat,
   currentSid: () => activeSid.value,
@@ -1770,6 +1789,22 @@ function closeChats(): void {
   void nextTick(() => threadHeader.value?.focusChats());
 }
 
+// The title menu hands focus back to its trigger after its exit animation, which would close a popover opened sooner.
+function openQuickShare(): void {
+  const el = root.value;
+  if (!el || el.contains(document.activeElement)) {
+    shareQuickOpen.value = true;
+    return;
+  }
+  const open = () => {
+    clearTimeout(timer);
+    el.removeEventListener("focusin", open);
+    shareQuickOpen.value = true;
+  };
+  const timer = setTimeout(open, MENU_FOCUS_RETURN_MS);
+  el.addEventListener("focusin", open);
+}
+
 function openShareDrawer(): void {
   shareQuickOpen.value = false;
   shareDrawerOpen.value = true;
@@ -1811,6 +1846,17 @@ function retry(): void {
   if (!sid) return;
   if (turnLock.value) return region.value?.announce(t(turnLockKey(turnLock.value)));
   void store.retry(sid);
+}
+
+function sheetToFull(): void {
+  const sid = activeSid.value;
+  trackAssistant("ai_container_moved", {
+    from: "sheet",
+    to: "full",
+    turn_running: !!session.value && isRunning(session.value.turn),
+  });
+  store.moveTo({ kind: "full" });
+  void router.push({ name: "assistant", params: sid ? { chatId: sid } : {} });
 }
 
 // The locked sidebar has no placement to move, so its full view is the route's hero gate.

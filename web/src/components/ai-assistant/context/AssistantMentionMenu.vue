@@ -17,14 +17,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <template>
   <div
     v-if="open"
-    :class="
-      inline
-        ? 'max-h-72 overflow-y-auto'
-        : [
-            'bg-dropdown-bg border-dropdown-border rounded-surface max-h-80 overflow-y-auto border p-1 shadow-md',
-            'md:absolute md:inset-x-0 md:bottom-full md:mb-1 md:max-w-96',
-          ]
-    "
+    :class="[
+      'bg-dropdown-bg border-dropdown-border rounded-surface max-h-80 overflow-y-auto border p-1 shadow-md',
+      'md:absolute md:inset-x-0 md:bottom-full md:mb-1 md:max-w-96',
+    ]"
     data-test="assistant-mention-panel"
     data-dd-privacy="mask"
   >
@@ -168,8 +164,8 @@ export interface MentionOption {
   code?: boolean;
 }
 
-/** An action row of the menu: Show all and Retry act in place, Image hands over to the file picker. */
-export type MentionAction = "more" | "retry" | "image" | "agent";
+/** An action row of the menu: Show all and Retry act in place, an agent row sets who answers. */
+export type MentionAction = "more" | "retry" | "agent";
 
 export interface AssistantMentionMenuProps {
   open: boolean;
@@ -177,10 +173,6 @@ export interface AssistantMentionMenuProps {
   query: string;
   org: string;
   listboxId: string;
-  /** Inside the `+` popover: no panel chrome of its own (D4 §3.6). */
-  inline?: boolean;
-  /** The `+` menu adds an Image row after the groups (D4 §3.6). */
-  withImage?: boolean;
 }
 
 /** At most this many options per group before "Show all", with no query typed. */
@@ -194,9 +186,9 @@ const STREAM_TYPES = ["logs", "metrics", "traces"] as const;
 
 <script setup lang="ts">
 import { useQuery } from "@tanstack/vue-query";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 
-import { agentGlyph, assistantGlyph, chipGlyph } from "@/components/ai-assistant/common/glyphs";
+import { agentGlyph, assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import { agentRowClause, sharedAgentPolicy } from "@/components/ai-assistant/agents/agentClause";
 import { announceComposer } from "@/components/ai-assistant/composer/composerUi";
 import { shortLabelFor, useAssistantCapability, useAssistantStore } from "@/composables/assistant";
@@ -232,10 +224,7 @@ interface Group {
   note?: I18nText;
 }
 
-const props = withDefaults(defineProps<AssistantMentionMenuProps>(), {
-  inline: false,
-  withImage: false,
-});
+const props = defineProps<AssistantMentionMenuProps>();
 
 const emit = defineEmits<{
   (e: "select", option: MentionOption): void;
@@ -338,7 +327,7 @@ const pipelineOptions = computed<MentionOption[]>(() =>
 // The menu's own filter, not `group()`'s: a purpose line must never match (MULTI-AGENT-02 AC 2).
 const agentGroup = computed<Group[]>(() => {
   const roster = capability.value.agents;
-  if (props.inline || !rosterOffersChoice(roster)) return [];
+  if (!rosterOffersChoice(roster)) return [];
   const shared = sharedAgentPolicy(roster, t);
   const items = (roster ?? []).flatMap((agent): MentionOption[] => {
     const label = agentName(agent.id, t);
@@ -406,7 +395,6 @@ const groups = computed<Group[]>(() =>
       pipelineOptions.value,
       () => void pipelines.refetch(),
     ),
-    ...(props.withImage ? [imageGroup()] : []),
   ].filter(
     (g) =>
       (g.state !== "ready" || g.items.length > 0) && (g.id !== "pipelines" || !!terms.value.length),
@@ -418,31 +406,11 @@ const flat = computed(() =>
   groups.value.flatMap((g) => g.items.filter((item) => !item.disabled || item.action === "agent")),
 );
 const results = computed(
-  () =>
-    flat.value.filter((item) => !item.action || item.action === "image" || item.action === "agent")
-      .length,
+  () => flat.value.filter((item) => !item.action || item.action === "agent").length,
 );
 const empty = computed(() => groups.value.every((g) => g.state === "ready") && results.value === 0);
 
-function imageGroup(): Group {
-  const label = t("assistant.composer.addImage");
-  const item: MentionOption = {
-    id: "action:image",
-    kind: "image",
-    label,
-    action: "image",
-    glyph: chipGlyph.image,
-  };
-  return {
-    id: "attach",
-    title: t("assistant.composer.addGroupAttach"),
-    kind: label,
-    state: "ready",
-    items: terms.value.length === 0 || matches(item) ? [item] : [],
-  };
-}
-
-// Show all and Retry act in place; an option or the Image row is handed to the composer.
+// Show all and Retry act in place; an option is handed to the composer.
 function choose(item: MentionOption): void {
   if (item.action === "agent") return chooseAgent(item);
   if (item.disabled) return;
@@ -457,6 +425,19 @@ function choose(item: MentionOption): void {
   emit("select", item);
 }
 const activeOptionId = computed(() => flat.value[active.value]?.id ?? null);
+
+// Focus stays in the textbox, so the browser never scrolls the active row in by itself.
+watch(activeOptionId, () => {
+  const current = flat.value[active.value];
+  if (!current) return;
+  const first = active.value === 0;
+  void nextTick(() => {
+    const row = document.getElementById(optionId(current));
+    // The first row scrolls to the very top so its group header shows too.
+    if (first) row?.closest('[data-test="assistant-mention-panel"]')?.scrollTo?.({ top: 0 });
+    else row?.scrollIntoView?.({ block: "nearest" });
+  });
+});
 
 // The composer strips the `@…` token on `select`; the sentence here replaces its "added" one in the same tick.
 function chooseAgent(item: MentionOption): void {
@@ -579,6 +560,10 @@ defineExpose({
   move(delta: number) {
     const count = flat.value.length;
     if (count > 0) active.value = (active.value + delta + count) % count;
+  },
+  /** Home/End from the textbox: the first or last option, as in a listbox. */
+  edge(to: "first" | "last") {
+    if (flat.value.length > 0) active.value = to === "first" ? 0 : flat.value.length - 1;
   },
   /** The option Enter picks; `null` when nothing matches, so Enter inserts nothing (CT-05 AC 5). */
   current: () => flat.value[active.value] ?? null,

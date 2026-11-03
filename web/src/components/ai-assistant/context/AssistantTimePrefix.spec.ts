@@ -61,6 +61,30 @@ describe("AssistantTimePrefix", () => {
     expect(wrapper.emitted("change")).toEqual([[null]]);
   });
 
+  it("is the same assistantContext pill as the other chips", () => {
+    const wrapper = mount(AssistantTimePrefix, { props: { window: DEFAULT } });
+    const chip = wrapper.get('[data-test="assistant-context-chip-time"]');
+    expect(chip.element.tagName).toBe("BUTTON");
+    expect(chip.classes()).toContain("rounded-default");
+    expect(chip.attributes("aria-haspopup")).toBe("dialog");
+  });
+
+  it("is a radiogroup whose arrows move focus between rows and Tab reaches only the checked one", async () => {
+    const { row } = await open({ window: DEFAULT });
+    const group = document.body.querySelector<HTMLElement>('[role="radiogroup"]')!;
+    expect(group).not.toBeNull();
+    expect(row("15m")?.getAttribute("role")).toBe("radio");
+    expect(row("15m")?.getAttribute("tabindex")).toBe("0");
+    expect(row("1h")?.getAttribute("tabindex")).toBe("-1");
+    row("15m")!.focus();
+    row("15m")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(document.activeElement).toBe(row("1h"));
+    row("1h")!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+    expect(document.activeElement).toBe(row("7d"));
+    row("7d")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(document.activeElement).toBe(row("15m"));
+  });
+
   it("applies a preset at once as an override", async () => {
     const { wrapper, row } = await open({ window: DEFAULT });
     row("24h")!.click();

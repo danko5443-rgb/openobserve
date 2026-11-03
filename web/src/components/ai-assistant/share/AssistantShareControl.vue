@@ -50,6 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       @created="onCreated"
       @settings="emit('settings')"
       @announce="announce"
+      @keydown.esc="escaped = true"
     />
   </OPopover>
   <ODrawer
@@ -91,6 +92,8 @@ export interface AssistantShareControlEmits {
   (e: "settings"): void;
   /** The title menu's Share, which cannot hold a surface once its menu closes. */
   (e: "open-quick"): void;
+  /** Esc closed the quick popover, whose hidden anchor cannot take focus back. */
+  (e: "dismissed"): void;
 }
 </script>
 
@@ -139,6 +142,7 @@ const settings = ref<InstanceType<typeof AssistantShareSettings> | null>(null);
 const created = ref<ShareView | null>(null);
 // Create mode beside an existing link, so a second audience never needs a revoke first.
 const anotherLink = ref(false);
+const escaped = ref(false);
 
 const org = computed(
   () => view.session.value?.org ?? vuex.state.selectedOrganization?.identifier ?? "",
@@ -209,8 +213,11 @@ const settingsProps = computed(() => ({
 watch(open, async (isOpen) => {
   if (!isOpen) {
     anotherLink.value = false;
+    if (escaped.value) emit("dismissed");
+    escaped.value = false;
     return;
   }
+  escaped.value = false;
   if (props.variant !== "drawer") return;
   await nextTick();
   // Reka focuses the first field on open; the primary action is the one a sharer wants next.

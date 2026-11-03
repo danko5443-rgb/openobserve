@@ -17,7 +17,9 @@ import type { ComputedRef, InjectionKey } from "vue";
 
 import {
   answerDataAt,
+  stepDoneLabel,
   stepLabelOf,
+  toolWords,
   type QueryRef,
   type StepFacts,
 } from "@/composables/assistant/pure";
@@ -128,7 +130,7 @@ export function stepLine(step: StepFacts, t: TranslateFn): I18nText {
   if (step.state === "failed") {
     const head = QUERY_KINDS.has(step.kind)
       ? t("assistant.steps.step.queryFailed")
-      : t("assistant.steps.step.toolFailed", { tool: raw(step.tool) });
+      : t("assistant.steps.step.toolFailed", { tool: raw(upperFirst(toolWords(step.tool))) });
     return joined([head, step.error ? raw(step.error) : null]);
   }
   const verb = stepVerb(step, t);
@@ -143,7 +145,7 @@ export function stepVerb(step: StepFacts, t: TranslateFn): I18nText {
     case "query":
       return step.target || step.query?.stream
         ? t("assistant.steps.step.queried", { stream: target })
-        : t("assistant.steps.step.ranTool", { tool: raw(step.tool) });
+        : toolDone(step.tool, t);
     case "promql":
       return t("assistant.steps.step.queriedMetrics");
     case "traces":
@@ -161,7 +163,7 @@ export function stepVerb(step: StepFacts, t: TranslateFn): I18nText {
     case "delete":
       return t("assistant.steps.step.deleted", { resource: target });
     default:
-      return t("assistant.steps.step.ranTool", { tool: raw(step.tool) });
+      return toolDone(step.tool, t);
   }
 }
 
@@ -251,4 +253,13 @@ function sqlParts(sql: string): { select: string; terms: string[]; tail: string 
 // Facts are separate values of one row, never one sentence split across keys.
 function joined(parts: (I18nText | null | undefined)[]): I18nText {
   return raw(parts.filter((part): part is I18nText => !!part).join(" · "));
+}
+
+function toolDone(tool: string, t: TranslateFn): I18nText {
+  const label = stepDoneLabel(tool);
+  return t(label.key, { ...label.params, tool: raw(String(label.params.tool ?? "")) });
+}
+
+function upperFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

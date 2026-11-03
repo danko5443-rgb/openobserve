@@ -27,6 +27,7 @@ import { isInternalStreamName } from "@/utils/internalStreams";
 
 import type { AssistantHostAdapter, ObjectKind, Sid, Tri } from "./assistantStore.types";
 import type { ContextChip, PageContext } from "./context/types";
+import { useAssistantContext } from "./context/useAssistantContext";
 import { getAssistantRuntime } from "./runtime";
 
 export const STARTER_COUNT = 3;
@@ -137,7 +138,10 @@ export function useAssistantStarters(input: AssistantStartersInput): {
       queryClient,
     ),
   );
-  const pageContext = shallowRef<PageContext | null>(null);
+  const ownRead = shallowRef<PageContext | null>(null);
+  // The composer's polled read, so a starter names the stream its placeholder names.
+  const tray = useAssistantContext(null, { store: runtime.store });
+  const pageContext = computed(() => tray.page.value ?? ownRead.value);
   const contextPending = shallowRef(true);
   let generation = 0;
 
@@ -149,7 +153,7 @@ export function useAssistantStarters(input: AssistantStartersInput): {
       contextPending.value = true;
       const context = await contextRegistry.getActiveContext().catch(() => null);
       if (asked !== generation) return;
-      pageContext.value = context;
+      ownRead.value = context;
       contextPending.value = false;
     },
     { immediate: true },

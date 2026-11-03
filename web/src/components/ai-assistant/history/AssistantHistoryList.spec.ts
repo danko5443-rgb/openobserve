@@ -423,6 +423,13 @@ describe("AssistantHistoryList", () => {
     expect(wrapper.find('[data-group="week"]').exists()).toBe(false);
   });
 
+  it("puts the rail's search in a 40 px band on the panel surface", async () => {
+    const { wrapper } = await setup({ mode: "rail", container: "full_view" });
+    expect(wrapper.get('[data-test="assistant-history"]').classes()).toContain("bg-surface-panel");
+    const tools = wrapper.get('[data-test="assistant-history-tools"]').classes();
+    expect(tools).toEqual(expect.arrayContaining(["h-10", "border-b", "border-border-default"]));
+  });
+
   it("routes the rail to the full view", async () => {
     const { wrapper, router } = await setup({ mode: "rail", container: "full_view" });
     await rowButtons(wrapper)[1].trigger("click");

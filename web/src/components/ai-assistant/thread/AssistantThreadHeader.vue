@@ -176,7 +176,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                     </ODropdownItem>
                   </ODropdownSub>
                 </template>
-                <ODropdownSub v-if="foldedLayout" :text-value="t('assistant.shell.layout')">
+                <slot v-if="foldedLayout && layoutDirect" name="menu-layout" />
+                <ODropdownSub v-else-if="foldedLayout" :text-value="t('assistant.shell.layout')">
                   <template #icon-left><OIcon :name="assistantGlyph.layout" size="sm" /></template>
                   <template #trigger>
                     <span data-test="assistant-title-menu-layout">{{
@@ -250,6 +251,8 @@ export interface AssistantThreadHeaderProps {
   container: Container;
   /** The container already knows it is below 24 rem, as a window does from its geometry. */
   narrow?: boolean;
+  /** The folded layout slot holds one move, shown as a direct item instead of a Layout submenu. */
+  layoutDirect?: boolean;
 }
 
 /** What the shell lends the header: its own New, and the in-panel Chats view that replaces its body. */

@@ -15,81 +15,86 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <span v-if="shown" class="flex shrink-0 items-center" data-test="assistant-agent-picker-root">
-    <ODropdown
-      v-model:open="menuOpen"
-      side="top"
-      align="end"
-      privacy="mask"
-      :content-class="composerPopoverClass(layout.tight)"
-    >
-      <template #trigger>
-        <AssistantIconButton
-          :label="name"
-          :icon="agentGlyph[shownAgent]"
-          chevron
-          :no-tooltip="menuOpen"
-          :data-pending="pending ? '' : undefined"
-          :class="pending ? 'bg-surface-accent-hover ring-border-focus ring-1' : ''"
-          data-test="assistant-agent-picker"
-          @keydown.up.prevent="menuOpen = true"
-        >
-          <template #tooltip>{{ tooltip }}</template>
-        </AssistantIconButton>
+  <ODropdown
+    v-if="shown"
+    v-model:open="menuOpen"
+    side="top"
+    align="end"
+    privacy="mask"
+    :content-class="composerPopoverClass(layout.tight)"
+  >
+    <template #trigger>
+      <AssistantIconButton
+        variant="primary"
+        :label="t('assistant.agent.picker.choose')"
+        :icon="assistantGlyph.expand"
+        :no-tooltip="menuOpen"
+        :data-pending="pending ? '' : undefined"
+        class="md:w-5!"
+        data-test="assistant-agent-picker"
+        @keydown.up.prevent="menuOpen = true"
+      />
+    </template>
+    <ODropdownGroup :label="t('assistant.agent.picker.heading')">
+      <template v-if="sharedPolicy" #label-action>
+        <span class="text-xs font-normal" data-test="assistant-agent-shared-policy">{{
+          sharedPolicy
+        }}</span>
       </template>
-      <ODropdownGroup :label="t('assistant.agent.picker.heading')">
-        <template v-if="sharedPolicy" #label-action>
-          <span class="text-xs font-normal" data-test="assistant-agent-shared-policy">{{
-            sharedPolicy
-          }}</span>
-        </template>
-        <template v-for="row in rows" :key="row.id">
-          <ODropdownItem
-            role="option"
-            :aria-selected="row.id === shownAgent"
-            :disabled="!!row.reason"
-            focusable-unavailable
-            :text-value="row.name"
-            :class="['min-h-8', row.id === shownAgent ? 'bg-dropdown-item-hover-bg' : '']"
-            :data-test="`assistant-agent-option-${row.id}`"
-            @select="choose(row)"
-          >
-            <template #icon-left>
-              <OIcon
-                :name="row.reason ? assistantGlyph.locked : agentGlyph[row.id]"
-                size="xs"
-                class="text-text-secondary"
-              />
+      <template v-for="row in rows" :key="row.id">
+        <ODropdownItem
+          role="menuitemradio"
+          :aria-checked="row.id === shownAgent"
+          :disabled="!!row.reason"
+          focusable-unavailable
+          :text-value="row.name"
+          class="min-h-8"
+          :data-test="`assistant-agent-option-${row.id}`"
+          @select="choose(row)"
+        >
+          <template #icon-left>
+            <OIcon
+              :name="row.reason ? assistantGlyph.locked : agentGlyph[row.id]"
+              size="xs"
+              class="text-text-secondary"
+            />
+          </template>
+          <span class="flex min-w-0 flex-1 flex-col items-start text-start">
+            <span
+              :class="['text-sm', row.reason ? 'text-text-secondary' : '']"
+              data-test="assistant-agent-option-name"
+              >{{ row.name }}</span
+            >
+            <span
+              v-if="row.askAdmin || row.reason || row.clause"
+              class="text-text-secondary min-w-0 text-xs"
+              data-test="assistant-agent-option-clause"
+              >{{
+                row.askAdmin ? t("assistant.agent.unavailable.short") : (row.reason ?? row.clause)
+              }}</span
+            >
+          </span>
+          <template v-if="row.id === shownAgent" #icon-right>
+            <OIcon
+              :name="assistantGlyph.done"
+              size="sm"
+              class="text-assistant-link ms-auto"
+              data-test="assistant-agent-option-checked"
+            />
+          </template>
+        </ODropdownItem>
+        <div v-if="row.askAdmin" class="flex justify-end px-3 pb-1">
+          <AssistantAskAdminPopover kind="agent_access" :org="org" :agent="String(row.name)">
+            <template #trigger>
+              <OButton variant="ghost-primary" size="xs" data-test="assistant-agent-ask-admin">
+                {{ t("assistant.outcome.actions.askAdmin") }}
+              </OButton>
             </template>
-            <span class="flex min-w-0 flex-col items-start text-start">
-              <span
-                :class="['text-sm', row.reason ? 'text-text-secondary' : '']"
-                data-test="assistant-agent-option-name"
-                >{{ row.name }}</span
-              >
-              <span
-                v-if="row.askAdmin || row.reason || row.clause"
-                class="text-text-secondary min-w-0 text-xs"
-                data-test="assistant-agent-option-clause"
-                >{{
-                  row.askAdmin ? t("assistant.agent.unavailable.short") : (row.reason ?? row.clause)
-                }}</span
-              >
-            </span>
-          </ODropdownItem>
-          <div v-if="row.askAdmin" class="flex justify-end px-3 pb-1">
-            <AssistantAskAdminPopover kind="agent_access" :org="org" :agent="String(row.name)">
-              <template #trigger>
-                <OButton variant="ghost-primary" size="xs" data-test="assistant-agent-ask-admin">
-                  {{ t("assistant.outcome.actions.askAdmin") }}
-                </OButton>
-              </template>
-            </AssistantAskAdminPopover>
-          </div>
-        </template>
-      </ODropdownGroup>
-    </ODropdown>
-  </span>
+          </AssistantAskAdminPopover>
+        </div>
+      </template>
+    </ODropdownGroup>
+  </ODropdown>
 </template>
 
 <script setup lang="ts">
@@ -126,7 +131,7 @@ import ODropdownGroup from "@/lib/overlay/Dropdown/ODropdownGroup.vue";
 import ODropdownItem from "@/lib/overlay/Dropdown/ODropdownItem.vue";
 import { useI18nTyped, type I18nText } from "@/types/i18n";
 
-import { agentClause, agentRowClause, sharedAgentPolicy } from "./agentClause";
+import { agentRowClause, sharedAgentPolicy } from "./agentClause";
 
 interface Row {
   id: AgentId;
@@ -151,23 +156,10 @@ const shown = computed(() => rosterOffersChoice(roster.value));
 const session = computed(() => (props.sid ? (store.state.sessions[props.sid] ?? null) : null));
 const org = computed<string>(() => vuex.state.selectedOrganization?.identifier ?? "");
 const shownAgent = computed(() => nextAgent(session.value));
-const shownName = computed(() => agentName(shownAgent.value, t));
 const pending = computed(() => {
   const next = session.value?.nextAgentId;
   return !!next && next !== currentAgent(session.value);
 });
-const shownClause = computed(() =>
-  agentClause(
-    roster.value?.find((agent) => agent.id === shownAgent.value),
-    t,
-  ),
-);
-const name = computed(() =>
-  t("assistant.agent.picker.label", { agent: shownName.value, clause: shownClause.value }),
-);
-const tooltip = computed(() =>
-  t("assistant.agent.picker.tooltip", { agent: shownName.value, clause: shownClause.value }),
-);
 
 const sharedPolicy = computed(() => sharedAgentPolicy(roster.value, t));
 const rows = computed<Row[]>(() =>

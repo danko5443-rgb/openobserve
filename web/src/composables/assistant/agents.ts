@@ -125,8 +125,8 @@ export function agentPurpose(id: AgentId, t: TranslateFn): I18nText {
 }
 
 /** The clause comes only from the server's flag, never from the agent's id (PO A13). */
-export function agentPolicy(agent: CapabilityAgent | undefined, t: TranslateFn): I18nText {
-  return t(agent?.readOnly ? "assistant.agent.policy.readOnly" : "assistant.agent.policy.asks");
+export function agentPolicy(agent: CapabilityAgent | undefined, t: TranslateFn): I18nText | null {
+  return agent?.readOnly ? t("assistant.agent.policy.readOnly") : null;
 }
 
 export function agentSuggestTitle(id: AgentId, t: TranslateFn): I18nText {

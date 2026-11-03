@@ -65,7 +65,8 @@ describe("AssistantDiffBlock", () => {
     const { wrapper } = setup();
     await flushPromises();
     const root = wrapper.get('[data-test="assistant-diff-block"]');
-    expect(root.element.tagName).toBe("SECTION");
+    expect(root.attributes("role")).toBe("region");
+    expect(root.classes()).toContain("rounded-surface");
     expect(root.attributes("aria-label")).toBe("Proposed change to the alert query");
     expect(root.attributes("data-dd-privacy")).toBe("mask");
     expect(document.activeElement?.getAttribute("data-test")).toBe("assistant-diff-reject");

@@ -226,14 +226,6 @@ test.describe("assistant editors and width", () => {
     await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) if (key.startsWith("o2.assistant.sidebar:")) localStorage.removeItem(key);
     });
-    const dashboardId = await harness.createTwoColumnDashboard(`SHELL-07 ${Date.now()}`);
-    await page.goto(url(`/dashboards/view?dashboard=${dashboardId}&folder=default&tab=default`), {
-      waitUntil: "domcontentloaded",
-    });
-    await ready(page);
-    await assistant.open("header");
-    await assistant.container().locator('[data-test="assistant-thread-menu"]').click();
-    await expect(page.locator('[data-test="assistant-shell-prefers-window-hint"]')).toBeVisible();
   });
 
   test("DOOR-07 a log field's regex hand-off opens one assistant: the regex drawer's dock, prefilled", { tag: ["@mock"] }, async ({

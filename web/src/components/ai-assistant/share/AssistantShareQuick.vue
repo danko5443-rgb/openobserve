@@ -31,32 +31,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           )
         }}
       </OText>
-      <div
-        class="border-border-default rounded-default flex min-w-0 items-center gap-2 border px-2 py-1"
-        data-test="assistant-share-quick-link"
-      >
-        <span class="text-text-body min-w-0 flex-1 truncate font-mono text-xs">{{ link }}</span>
-        <OButton
-          variant="ghost"
-          size="xs"
-          class="shrink-0 max-md:min-h-11 pointer-coarse:min-h-11"
-          data-test="assistant-share-quick-copy"
-          @click="copy"
-        >
-          {{ copied ? t("common.copied") : t("assistant.share.copyLink") }}
-        </OButton>
-      </div>
+      <OCard variant="outlined" class="min-w-0" data-test="assistant-share-quick-link">
+        <div class="flex min-w-0 items-center gap-2 px-2 py-1">
+          <span class="text-text-body min-w-0 flex-1 truncate font-mono text-xs">{{ link }}</span>
+          <OButton
+            variant="ghost"
+            size="xs"
+            class="shrink-0 max-md:min-h-11 pointer-coarse:min-h-11"
+            data-test="assistant-share-quick-copy"
+            @click="copy"
+          >
+            {{ copied ? t("common.copied") : t("assistant.share.copyLink") }}
+          </OButton>
+        </div>
+      </OCard>
       <OText v-if="outOfDate" as="p" variant="meta" data-test="assistant-share-quick-changed">
         {{ t("assistant.share.changedSince") }} ·
-        <button
-          type="button"
-          class="text-assistant-link cursor-pointer"
+        <OButton
+          variant="ghost-primary"
+          size="xs"
+          class="max-md:min-h-11 pointer-coarse:min-h-11"
           :disabled="running || updating"
           data-test="assistant-share-quick-update"
           @click="updateSnapshot"
         >
           {{ t("assistant.share.updateSnapshot") }}
-        </button>
+        </OButton>
       </OText>
       <div class="flex justify-end">
         <OButton
@@ -133,6 +133,7 @@ import { computed, onBeforeUnmount, ref } from "vue";
 
 import { useAssistantStore } from "@/composables/assistant";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OCard from "@/lib/core/Card/OCard.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import { toast } from "@/lib/feedback/Toast/useToast";
 import ORadio from "@/lib/forms/Radio/ORadio.vue";

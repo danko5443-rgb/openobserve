@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     privacy="mask"
     side="top"
     align="start"
+    :collision-padding="8"
     :aria-label="chip.label"
     content-class="flex w-[min(28rem,calc(100vw-1.5rem))] max-h-[min(32rem,70vh)] flex-col gap-3 overflow-y-auto p-3"
     @update:open="(value) => emit('update:open', value)"

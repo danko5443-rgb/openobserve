@@ -106,28 +106,30 @@ describe("AssistantAgentPicker", () => {
     );
   });
 
-  it("names the trigger with the agent and its clause, and lists one row per agent", () => {
+  it("names the chevron, lists one radio row per agent, and checks the current one", () => {
     const { wrapper } = setup();
-    expect(trigger(wrapper).attributes("aria-label")).toBe(
-      "Agent: O2 Assistant, Asks before changing anything",
-    );
+    expect(trigger(wrapper).attributes("aria-label")).toBe("Choose agent");
     expect(wrapper.text()).toContain("Agent");
     expect(option(wrapper, "sre").text()).toContain("Finds causes · Read-only");
-    expect(option(wrapper, "generate-query").text()).toContain(
-      "Writes queries · Asks before changing anything",
-    );
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(3);
-    expect(option(wrapper, "o2-ai").attributes("aria-selected")).toBe("true");
-    expect(option(wrapper, "o2-ai").classes()).toContain("bg-dropdown-item-hover-bg");
+    expect(
+      option(wrapper, "generate-query").get('[data-test="assistant-agent-option-clause"]').text(),
+    ).toBe("Writes queries");
+    expect(wrapper.findAll('[role="menuitemradio"]')).toHaveLength(3);
+    expect(option(wrapper, "o2-ai").attributes("aria-checked")).toBe("true");
+    expect(option(wrapper, "sre").attributes("aria-checked")).toBe("false");
+    expect(
+      option(wrapper, "o2-ai").find('[data-test="assistant-agent-option-checked"]').exists(),
+    ).toBe(true);
+    expect(
+      option(wrapper, "sre").find('[data-test="assistant-agent-option-checked"]').exists(),
+    ).toBe(false);
   });
 
   it("says a policy every agent shares once, and gives each row its purpose on a second line", () => {
-    const shared = ROSTER.map((agent) => ({ ...agent, readOnly: false }));
+    const shared = ROSTER.map((agent) => ({ ...agent, readOnly: true }));
     const { wrapper } = setup(shared);
-    expect(wrapper.get('[data-test="assistant-agent-shared-policy"]').text()).toBe(
-      "Asks before changing anything",
-    );
-    expect(option(wrapper, "generate-query").text()).not.toContain("Asks before");
+    expect(wrapper.get('[data-test="assistant-agent-shared-policy"]').text()).toBe("Read-only");
+    expect(option(wrapper, "generate-query").text()).not.toContain("Read-only");
     expect(
       option(wrapper, "generate-query").get('[data-test="assistant-agent-option-clause"]').text(),
     ).toBe("Writes queries");
@@ -145,7 +147,7 @@ describe("AssistantAgentPicker", () => {
     await option(wrapper, "sre").trigger("click");
     expect(store.state.sessions[sid].agentId).toBe("sre");
     expect(send).not.toHaveBeenCalled();
-    expect(trigger(wrapper).attributes("aria-label")).toContain("Investigator");
+    expect(option(wrapper, "sre").attributes("aria-checked")).toBe("true");
     expect(trigger(wrapper).attributes("data-pending")).toBeUndefined();
     expect(composerUi(sid).status?.text).toBe("Investigator will answer.");
   });

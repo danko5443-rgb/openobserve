@@ -168,7 +168,7 @@ describe("names and regions (CT-08)", () => {
     const { wrapper, textarea, store, sid } = setup();
     store.state.sessions[sid].nextAgentId = "sre";
     await flushPromises();
-    expect(textarea().attributes("placeholder")).toBe("Ask Investigator");
+    expect(textarea().attributes("placeholder")).toBe("Ask Investigator…");
     expect(wrapper.get('[data-test="assistant-composer-helper"]').text()).toBe(
       "Investigator answers from now on. Earlier answers stay.",
     );
@@ -247,7 +247,7 @@ describe("rows (§1)", () => {
     expect(rows()).toBe(before);
   });
 
-  it("keeps the same DOM order at every width: text, tray, +, i, picker, mic, Send", () => {
+  it("keeps the same DOM order at every width: text, tray, image, Send", () => {
     const wrapper = mount(AssistantComposer, {
       props: { sid: null },
       slots: { chips: '<div data-test="tray-stub">tray</div>' },
@@ -260,9 +260,9 @@ describe("rows (§1)", () => {
         .element.compareDocumentPosition(wrapper.get(`[data-test="${b}"]`).element) &
       Node.DOCUMENT_POSITION_FOLLOWING;
     expect(order("assistant-composer-field", "tray-stub")).toBeTruthy();
-    expect(order("tray-stub", "assistant-add-context")).toBeTruthy();
-    expect(order("assistant-add-context", "assistant-context-sees")).toBeTruthy();
-    expect(order("assistant-context-sees", "assistant-send")).toBeTruthy();
+    expect(order("tray-stub", "assistant-attach-image")).toBeTruthy();
+    expect(order("assistant-attach-image", "assistant-send")).toBeTruthy();
+    expect(wrapper.find('[data-test="assistant-context-sees"]').exists()).toBe(false);
   });
 });
 
@@ -424,8 +424,8 @@ describe("states (`40` §1.3)", () => {
     expect(wrapper.get('[data-test="assistant-composer-reply"]').text()).toContain(
       "Reply declines the request",
     );
-    expect(wrapper.find('[data-test="assistant-add-context"]').exists()).toBe(false);
-    expect(wrapper.find('[data-test="assistant-context-sees"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="assistant-attach-image"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="assistant-agent-picker"]').exists()).toBe(false);
     expect(wrapper.get('[data-test="assistant-send"]').attributes("aria-label")).toBe("Send reply");
   });
 
@@ -646,6 +646,42 @@ describe("keys (`40` §1.4, CT-09)", () => {
     expect(textarea().attributes("aria-controls")).toBeUndefined();
     expect(textarea().element.value).toBe("look at @che");
   });
+
+  it("moves to the first and last option on Home and End, keeping the menu open", async () => {
+    seedMentionGroups();
+    queryClient.setQueryData(streamKeys.nameList("default", "logs"), [
+      { name: "checkout" },
+      { name: "payments" },
+      { name: "search" },
+    ]);
+    const { textarea } = setup();
+    textarea().element.focus();
+    await type(textarea(), "@");
+    const first = textarea().attributes("aria-activedescendant");
+    expect(first).toBeTruthy();
+    await textarea().trigger("keydown", { key: "End" });
+    await flushPromises();
+    expect(textarea().attributes("aria-controls")).toMatch(/^assistant-mention-/);
+    const last = textarea().attributes("aria-activedescendant");
+    expect(last).toBeTruthy();
+    expect(last).not.toBe(first);
+    await textarea().trigger("keydown", { key: "Home" });
+    await flushPromises();
+    expect(textarea().attributes("aria-controls")).toMatch(/^assistant-mention-/);
+    expect(textarea().attributes("aria-activedescendant")).toBe(first);
+  });
+
+  it("never sends a message that is only @", async () => {
+    const { wrapper, textarea, send } = setup();
+    textarea().element.focus();
+    await type(textarea(), " @ ");
+    await textarea().trigger("keydown", { key: "Escape" });
+    expect(wrapper.get('[data-test="assistant-send"]').attributes("aria-disabled")).toBe("true");
+    await textarea().trigger("keydown", { key: "Enter" });
+    await wrapper.get('[data-test="assistant-send"]').trigger("click");
+    await flushPromises();
+    expect(send).not.toHaveBeenCalled();
+  });
 });
 
 describe("prefill (IW-06, `70` §5)", () => {
@@ -774,39 +810,43 @@ describe("one frame, the + menu and long pastes (D4 §3.1, §3.6, §3.9)", () =>
     const frame = textarea().element.parentElement!;
     expect(frame.className).toContain("border");
     expect(frame.querySelector('[data-test="assistant-composer-controls"]')).not.toBeNull();
-    expect(frame.querySelector('[data-test="assistant-add-context"]')).not.toBeNull();
+    expect(frame.querySelector('[data-test="assistant-attach-image"]')).not.toBeNull();
     expect(frame.querySelector('[data-test="assistant-send"]')).not.toBeNull();
     expect(wrapper.find('[data-test="assistant-composer-hints"]').exists()).toBe(false);
-    expect(wrapper.find('[data-test="assistant-attach-image"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="assistant-add-context"]').exists()).toBe(false);
   });
 
-  it("opens the + menu with a search, the context groups and Image, and no voice row", async () => {
-    seedMentionGroups();
+  it("opens the file picker in one click from Attach image", async () => {
     const { wrapper } = setup();
-    await wrapper.get('[data-test="assistant-add-context"]').trigger("click");
-    await flushPromises();
-    const menu = document.body.querySelector('[data-test="assistant-add-context-menu"]')!;
-    expect(menu.querySelector('[data-test="assistant-add-context-search"]')).not.toBeNull();
-    expect(menu.querySelector('[data-test="assistant-mention-group-streams"]')).not.toBeNull();
-    expect(menu.querySelector('[data-test="assistant-mention-image"]')?.textContent).toContain(
-      "Image…",
-    );
-    expect(menu.textContent).not.toContain("Voice dictation");
+    const button = wrapper.get('[data-test="assistant-attach-image"]');
+    expect(button.attributes("aria-label")).toBe("Attach image");
+    const click = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => {});
+    await button.trigger("click");
+    expect(click).toHaveBeenCalledTimes(1);
+    expect((click.mock.contexts[0] as HTMLInputElement).type).toBe("file");
+    click.mockRestore();
   });
 
-  it("adds a + pick as a chip without touching the typed text", async () => {
-    seedMentionGroups();
-    const { wrapper, textarea, store, sid } = setup();
-    await type(textarea(), "why is it slow");
-    await wrapper.get('[data-test="assistant-add-context"]').trigger("click");
+  it("puts the agent choice on Send and names the agent there", async () => {
+    const { wrapper } = setup();
+    expect(wrapper.find('[data-test="assistant-agent-picker"]').exists()).toBe(false);
+    expect(wrapper.get('[data-test="assistant-send"]').attributes("aria-label")).toBe(
+      "Send message",
+    );
+    fake.current.capability.value = {
+      ...fake.current.capability.value,
+      agents: [
+        { id: "o2-ai", pickable: true, available: true },
+        { id: "sre", pickable: true, available: true },
+      ],
+    };
     await flushPromises();
-    document.body
-      .querySelector<HTMLElement>('[data-test="assistant-mention-option"][data-kind="stream"]')!
-      .click();
-    await flushPromises();
-    const composer = store.state.sessions[sid].composer;
-    expect(composer.text).toBe("why is it slow");
-    expect(composer.chips.map((chip: ContextChip) => chip.ref?.id)).toContain("checkout");
+    const group = wrapper.get('[data-test="assistant-send"]').element.parentElement!;
+    expect(group.getAttribute("role")).toBe("group");
+    expect(group.querySelector('[data-test="assistant-agent-picker"]')).not.toBeNull();
+    expect(wrapper.get('[data-test="assistant-send"]').attributes("aria-label")).toMatch(
+      /^Send to /,
+    );
   });
 
   it("turns a long paste into a Pasted text chip and offers it back as text until the next edit", async () => {

@@ -63,7 +63,9 @@ const title = (w: ReturnType<typeof mountOutcome>) =>
   w.get('[data-test="assistant-turn-outcome-title"]').text();
 const buttons = (w: ReturnType<typeof mountOutcome>) =>
   w.findAll('[data-test="assistant-turn-outcome-action"]');
-const label = (w: ReturnType<typeof mountOutcome>) => buttons(w)[0]?.text();
+// A re-run is icon-only, so its accessible name is its label.
+const label = (w: ReturnType<typeof mountOutcome>) =>
+  buttons(w)[0] && (buttons(w)[0].text() || buttons(w)[0].attributes("aria-label"));
 const bodies = (w: ReturnType<typeof mountOutcome>) =>
   w.findAll('[data-test="assistant-turn-outcome-body"]').map((line) => line.text());
 
@@ -407,6 +409,22 @@ describe("AssistantTurnOutcome", () => {
       "retry",
       "sign_in",
     ]);
+  });
+
+  it("draws a retry and an ask-again as an icon-only re-run named by its label", () => {
+    for (const [kind, err] of [
+      ["failed", error("unknown")],
+      ["refused", error("offline")],
+      ["expired", undefined],
+    ] as const) {
+      const action = mountOutcome({ kind, error: err }).get(
+        '[data-test="assistant-turn-outcome-action"]',
+      );
+      expect(action.text()).toBe("");
+      expect(action.attributes("aria-label")).toBe(kind === "expired" ? "Ask again" : "Retry");
+    }
+    const stopped = mountOutcome({ kind: "stopped" });
+    expect(stopped.get('[data-test="assistant-turn-outcome-action"]').text()).toBe("Continue");
   });
 
   it("keeps a failure's Details on its row and ends the row with the action", () => {

@@ -16,7 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 <template>
   <span
-    class="inline-flex max-w-full min-w-0 items-center gap-0.5"
+    class="inline-flex max-w-full min-w-0 items-center"
     :data-test="`assistant-context-chip-${chip.kind}`"
     :data-state="state"
     data-assistant-chip
@@ -27,30 +27,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       :label="label"
       :icon="chipGlyph[chip.kind]"
       :clickable="!inert"
+      :removable="removable"
+      :remove-label="t('assistant.context.remove', { label })"
+      remove-data-test="assistant-context-chip-remove"
+      :role="removable ? 'button' : undefined"
       :aria-label="name"
       :aria-haspopup="popup && !inert ? 'dialog' : undefined"
       :aria-expanded="popup && !inert ? expanded : undefined"
-      class="max-w-full min-w-0 motion-safe:transition-colors max-md:min-h-11 pointer-coarse:min-h-11"
+      class="max-w-full min-w-0 motion-safe:transition-colors max-md:min-h-11 pointer-coarse:min-h-11 [&>button]:-my-0.5"
       data-test="assistant-context-chip-button"
       @click="onClick"
       @keydown="onKeydown"
+      @remove="emit('remove')"
     >
+      <template v-if="imageSrc" #icon>
+        <img
+          :src="imageSrc"
+          alt=""
+          class="rounded-default -my-0.5 size-4 shrink-0 object-cover"
+          data-test="assistant-context-chip-thumb"
+        />
+      </template>
       <OTruncatedText class="min-w-0">{{ compact ? (shortLabel ?? label) : label }}</OTruncatedText>
       <span v-if="secondary && !compact" class="shrink-0 font-normal" aria-hidden="true"
         >{{ dot }} {{ secondary }}</span
       >
     </OTag>
-    <OButton
-      v-if="removable"
-      variant="ghost"
-      size="icon-chip"
-      class="max-md:size-11 pointer-coarse:size-11"
-      :aria-label="t('assistant.context.remove', { label })"
-      data-test="assistant-context-chip-remove"
-      @click="emit('remove')"
-    >
-      <OIcon :name="assistantGlyph.close" size="xs" />
-    </OButton>
   </span>
 </template>
 
@@ -73,6 +75,8 @@ export interface AssistantContextChipProps {
   /** The chip opens a popover (the inspector, the time picker or the sees list); `false` for Add back. */
   popup?: boolean;
   expanded?: boolean;
+  /** An image chip's data URL, shown as a thumbnail in place of the kind icon. */
+  imageSrc?: string;
 }
 
 export interface AssistantContextChipEmits {
@@ -85,11 +89,9 @@ export interface AssistantContextChipEmits {
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { assistantGlyph, chipGlyph } from "@/components/ai-assistant/common/glyphs";
+import { chipGlyph } from "@/components/ai-assistant/common/glyphs";
 import { chipSecondaryOf, chipStateOf } from "@/composables/assistant";
 import OTag from "@/lib/core/Badge/OTag.vue";
-import OButton from "@/lib/core/Button/OButton.vue";
-import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OTruncatedText from "@/lib/core/Typography/OTruncatedText.vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 
@@ -101,6 +103,7 @@ const props = withDefaults(defineProps<AssistantContextChipProps>(), {
   shortLabel: undefined,
   popup: true,
   expanded: false,
+  imageSrc: undefined,
 });
 
 const emit = defineEmits<AssistantContextChipEmits>();
@@ -133,6 +136,13 @@ function onClick(event: MouseEvent | KeyboardEvent): void {
 // Delete and Backspace remove a focused chip; the arrows hand focus to the neighbour (CT-08 AC 4, CT-01 AC 11).
 function onKeydown(event: KeyboardEvent): void {
   if (event.isComposing || event.keyCode === 229) return;
+  if (isRemoveActivation(event)) {
+    // Runs before the badge's own Enter/Space handler, which would open the chip instead.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    emit("remove");
+    return;
+  }
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     event.preventDefault();
     emit("move", event.key === "ArrowLeft" ? -1 : 1);
@@ -140,5 +150,13 @@ function onKeydown(event: KeyboardEvent): void {
     event.preventDefault();
     emit("remove");
   }
+}
+
+function isRemoveActivation(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  return (
+    (event.key === "Enter" || event.key === " ") &&
+    target?.dataset.test === "assistant-context-chip-remove"
+  );
 }
 </script>

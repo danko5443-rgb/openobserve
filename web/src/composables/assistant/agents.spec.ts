@@ -90,7 +90,7 @@ describe("agents: the roster", () => {
   });
 
   it("calls an agent read-only only on the server's flag, whatever its id", () => {
-    expect(agentPolicy(ROSTER[1], t)).toBe("assistant.agent.policy.asks");
+    expect(agentPolicy(ROSTER[1], t)).toBeNull();
     expect(agentPolicy({ ...ROSTER[1], readOnly: true }, t)).toBe(
       "assistant.agent.policy.readOnly",
     );

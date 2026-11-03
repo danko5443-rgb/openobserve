@@ -13,26 +13,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import { shallowRef, type InjectionKey } from "vue";
-
-import type { WindowCorner } from "@/composables/assistant";
-
-export type WindowSizeStep = "wider" | "narrower" | "taller" | "shorter";
+import { shallowRef } from "vue";
 
 export type WindowKeyboardMode = "move" | "resize";
-
-/** What a window lends its Layout menu: the moves only a window can do. */
-export interface AssistantWindowHost {
-  otherCorners(): WindowCorner[];
-  moveTo(corner: WindowCorner): void;
-  sizeLimited(step: WindowSizeStep): boolean;
-  stepSize(step: WindowSizeStep): void;
-  resetSize(): void;
-  startMode(mode: WindowKeyboardMode): void;
-}
-
-export const assistantWindowHostKey: InjectionKey<AssistantWindowHost> =
-  Symbol("assistantWindowHost");
 
 /** A sidebar tear-off the new window carries on, under the same pointer. */
 export interface TearOffDrag {

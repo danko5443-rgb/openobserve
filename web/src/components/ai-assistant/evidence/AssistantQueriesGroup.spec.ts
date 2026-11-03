@@ -24,6 +24,7 @@ import { raw } from "@/types/i18n";
 import { fakeEvidence } from "../__tests__/fakeEvidence";
 import { fakeRouter } from "../__tests__/fakeAssistant";
 import AssistantQueriesGroup from "./AssistantQueriesGroup.vue";
+import { revealStep } from "./revealStep";
 
 vi.mock("@/components/QueryEditor.vue", () => ({
   default: { props: ["query"], template: "<pre>{{ query }}</pre>" },
@@ -84,12 +85,61 @@ describe("AssistantQueriesGroup", () => {
     return { wrapper, ...evidence };
   };
 
-  it("shows one closed line naming the queries and their window", () => {
+  it("shows one closed line counting the queries, their window only inside the open trail", async () => {
     const { wrapper } = mountGroup([query("a", "default"), query("b", "default")]);
     const line = wrapper.get('[data-test="assistant-queries-line"]');
-    expect(line.text()).toMatch(/^2 queries, \d\d:\d\d–\d\d:\d\d$/);
+    expect(line.text()).toBe("2 queries");
     expect(line.attributes("aria-expanded")).toBe("false");
+    expect(line.classes()).toContain("[&&:focus-visible]:outline-offset-0!");
     expect(wrapper.find('[data-test="assistant-queries-rows"]').exists()).toBe(false);
+    await line.trigger("click");
+    expect(wrapper.get('[data-test="assistant-queries-range"]').text()).toMatch(
+      /^Evaluated \d\d:\d\d–\d\d:\d\d$/,
+    );
+  });
+
+  it("puts the answer's own line end beside the count, and renders it alone when no step ran", () => {
+    const slots = { "line-end": '<span data-test="end">Copy</span>' };
+    const { wrapper } = mountGroup([query("a", "default")], {}, undefined, {}, undefined);
+    expect(wrapper.find('[data-test="end"]').exists()).toBe(false);
+    const withEnd = mount(AssistantQueriesGroup, {
+      props: { message: message([query("a", "default")]) },
+      slots,
+      global: { plugins: [fakeRouter([])] },
+    });
+    const head = withEnd.get('[data-test="assistant-queries-line"]').element.parentElement!;
+    expect(head.querySelector('[data-test="end"]')).not.toBeNull();
+    const alone = mount(AssistantQueriesGroup, {
+      props: { message: message([]) },
+      slots,
+      global: { plugins: [fakeRouter([])] },
+    });
+    expect(alone.find('[data-test="end"]').exists()).toBe(true);
+    expect(alone.find('[data-test="assistant-queries-line"]').exists()).toBe(false);
+    expect(alone.get('[data-test="assistant-queries-group"]').attributes("role")).toBeUndefined();
+    expect(mountGroup([]).wrapper.find('[data-test="assistant-queries-group"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("draws a step with nothing to open as a plain row, its tool named in words", async () => {
+    const listed: ContentBlock = {
+      type: "tool_call",
+      tool: "ListIncidents",
+      call_id: "l1",
+      stepState: "done",
+    };
+    const custom: ContentBlock = { ...listed, tool: "o2_GetWidgetHistory", call_id: "l2" };
+    const { wrapper } = mountGroup([listed, custom, query("a", "default")]);
+    await wrapper.get('[data-test="assistant-queries-line"]').trigger("click");
+    const plain = wrapper.get('[data-test="assistant-queries-row-l1"]');
+    expect(plain.text()).toContain("Listed incidents");
+    expect(plain.find("button").exists()).toBe(false);
+    expect(plain.find('[data-step-header="l1"]').attributes("tabindex")).toBe("-1");
+    expect(wrapper.get('[data-test="assistant-queries-row-l2"]').text()).toContain(
+      "Ran get widget history",
+    );
+    expect(wrapper.get('[data-test="assistant-queries-row-a"]').find("button").exists()).toBe(true);
   });
 
   it("opens to numbered rows with the SQL fragment and the row count, the table only when it differs", async () => {
@@ -111,7 +161,7 @@ describe("AssistantQueriesGroup", () => {
     const { wrapper } = mountGroup([schema, query("a", "default")]);
     await wrapper.get('[data-test="assistant-queries-line"]').trigger("click");
     expect(wrapper.find('[data-test="assistant-queries-row-s1"]').exists()).toBe(true);
-    expect(wrapper.get('[data-test="assistant-queries-line"]').text()).toMatch(/^2 steps, /);
+    expect(wrapper.get('[data-test="assistant-queries-line"]').text()).toBe("2 steps");
   });
 
   it("folds every schema read into one row and counts the rows it opens to", async () => {
@@ -122,7 +172,7 @@ describe("AssistantQueriesGroup", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].text()).toContain("Read schema for default, other");
     expect(rows[0].find('[data-step-header="s2"]').exists()).toBe(true);
-    expect(wrapper.get('[data-test="assistant-queries-line"]').text()).toMatch(/^2 steps, /);
+    expect(wrapper.get('[data-test="assistant-queries-line"]').text()).toBe("2 steps");
   });
 
   it("opens a citation's line when the answer asks for that step, and leaves the row closed", async () => {
@@ -142,6 +192,31 @@ describe("AssistantQueriesGroup", () => {
     await flushPromises();
     expect(wrapper.find('[data-test="assistant-queries-rows"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="assistant-queries-body-a"]').exists()).toBe(false);
+  });
+
+  it("lands a citation of the second folded schema read on the visible plain row", async () => {
+    const article = document.createElement("article");
+    document.body.appendChild(article);
+    const evidence = fakeEvidence();
+    const second: ContentBlock = { ...schema, call_id: "s2", context: { stream_name: "other" } };
+    mount(AssistantQueriesGroup, {
+      props: { message: message([schema, second, query("a", "default")]), turn: evidence.turn() },
+      attachTo: article,
+      global: {
+        plugins: [fakeRouter([{ path: "/logs", name: "logs", component: { render: () => null } }])],
+        provide: evidence.provide,
+      },
+    });
+    await flushPromises();
+    expect(await revealStep(article, "s2")).toBe(true);
+    await flushPromises();
+    const visible = article.querySelector<HTMLElement>('[data-step-header="s1"]')!;
+    expect(visible.hidden).toBe(false);
+    expect(document.activeElement).toBe(visible);
+    expect(visible.classList.contains("ring-2")).toBe(true);
+    expect(article.querySelector('[data-step-header="s2"]')!.classList.contains("ring-2")).toBe(
+      false,
+    );
   });
 
   it("offers the wider window on the line after an empty default window, and only the click sends", async () => {

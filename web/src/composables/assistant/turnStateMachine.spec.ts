@@ -25,7 +25,9 @@ import {
   STALL_MS,
   errorTitle,
   outcomeOf,
+  stepDoneLabel,
   stepLabel,
+  toolWords,
   turnReducer,
   turnStatusText,
   type TurnEffect,
@@ -751,7 +753,14 @@ describe("turnStatusText", () => {
   it("falls back to Running {tool} when no template fits", () => {
     const tool: TurnState = { state: "running_tool", tool: "kubectl", target: null, callId: "k" };
     expect(turnStatusText(tool, meta(), t, 1_000)?.line).toBe("Running kubectl");
-    expect(stepLabel("SearchSQL", null).key).toBe("assistant.step.fallback");
+    expect(stepLabel("SearchSQL", null)).toEqual({
+      key: "assistant.step.fallback",
+      params: { tool: "search SQL" },
+    });
+    expect(stepLabel("o2_GetAlertHistory", null).key).toBe("assistant.step.GetAlertHistory");
+    expect(stepDoneLabel("ListIncidents").key).toBe("assistant.steps.step.tools.ListIncidents");
+    expect(stepDoneLabel("GetWidgetHistory").params).toEqual({ tool: "get widget history" });
+    expect(toolWords("o2_alert_mute")).toBe("alert mute");
     expect(stepLabel("o2_UpdateAlert", "checkout")).toEqual({
       key: "assistant.step.update",
       params: { resource: "checkout" },

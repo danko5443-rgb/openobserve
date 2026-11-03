@@ -262,6 +262,12 @@ describe("AssistantThreadHeader", () => {
     expect(wrapper.get('[data-test="assistant-title-menu-header"]').text()).toContain("Not saved");
   });
 
+  it("shows a single move as a direct item, with no one-row Layout submenu", async () => {
+    const { wrapper } = await setup({ narrow: true, layoutDirect: true });
+    expect(wrapper.find('[data-test="layout-stub"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="assistant-title-menu-layout"]').exists()).toBe(false);
+  });
+
   it("describes the heading by the not-saved tag at 24 rem and wider", async () => {
     const { wrapper, store, sid } = await setup();
     expect(wrapper.find('[data-test="assistant-title-menu-layout"]').exists()).toBe(false);
