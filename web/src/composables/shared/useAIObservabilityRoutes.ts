@@ -63,19 +63,67 @@ const SessionDetails = () => import("@/plugins/traces/SessionDetails.vue");
 
 export type AiObservabilityGroup = "Monitor" | "Annotate" | "Experiment" | "Evaluate";
 
+/** Rail items that hold several sections as tabs (see `tabOf` below). */
+export type AiObservabilityTabbedItemKey =
+  "agents" | "costUsage" | "evaluations" | "prompts" | "experiments";
+
+export interface AiObservabilityTabbedItem {
+  labelKey: I18nKey;
+  icon: IconName;
+  dataTest: string;
+}
+
 /**
- * The ONE list an AI Observability nav rail item AND its primary route are
- * both built from (see `Index.vue`'s `sectionItems` and
+ * One rail item each, its tabs being the sections that name it in `tabOf`.
+ * The routes stay flat siblings — a tab is presentation, not nesting (the
+ * AlertSectionTabs pattern) — so every page keeps its own URL, feature gate
+ * and online-evaluations flag, and an item holding pages of different gates
+ * still locks or hides each of its tabs on its own.
+ */
+export const AI_OBSERVABILITY_TABBED_ITEMS: Record<
+  AiObservabilityTabbedItemKey,
+  AiObservabilityTabbedItem
+> = {
+  agents: {
+    labelKey: "aiObservability.nav.agents",
+    icon: "hub",
+    dataTest: "ai-secondary-nav-agents",
+  },
+  costUsage: {
+    labelKey: "aiObservability.nav.costUsage",
+    icon: "paid",
+    dataTest: "ai-secondary-nav-cost-usage",
+  },
+  evaluations: {
+    labelKey: "aiObservability.nav.evaluations",
+    icon: "star-rate",
+    dataTest: "ai-secondary-nav-evaluations",
+  },
+  prompts: {
+    labelKey: "aiObservability.nav.prompts",
+    icon: "edit",
+    dataTest: "ai-secondary-nav-prompts",
+  },
+  experiments: {
+    labelKey: "aiObservability.nav.experiments",
+    icon: "science",
+    dataTest: "ai-secondary-nav-experiments",
+  },
+};
+
+/**
+ * The ONE list an AI Observability nav rail item or tab AND its primary route
+ * are both built from (see `Index.vue`'s `sectionEntries` and
  * `useAIObservabilityRouteChildren` below) — a typo in `featureKey` or
  * `routeName` now breaks the nav tooltip and the route guard the SAME way,
  * instead of silently drifting between independently hand-typed copies.
  *
- * `featureKey: null` marks the two sections OSS serves from its own backend
- * (LLM Insights, Sessions) — always reachable, no gate. Several entries
- * share one `routeName` (the four Evaluate tabs all land on `aiEvaluations`)
- * — `useAIObservabilityRouteChildren` collapses those to a single route
- * record; `tabQuery` carries the `?tab=` value the nav item's link needs
- * that the shared route itself doesn't know about.
+ * `featureKey: null` marks the sections OSS serves from its own backend
+ * (LLM Insights, Sessions, Issues, Users, Budgets) — always reachable, no
+ * gate. Several entries share one `routeName` (the four Evaluations tabs all
+ * land on `aiEvaluations`) — `useAIObservabilityRouteChildren` collapses
+ * those to a single route record; `tabQuery` carries the `?tab=` value the
+ * tab's link needs that the shared route itself doesn't know about.
  */
 export interface AiObservabilitySection {
   key: string;
@@ -86,6 +134,8 @@ export interface AiObservabilitySection {
   group: AiObservabilityGroup;
   dataTest: string;
   tabQuery?: string;
+  /** The rail item this section is a tab of; omitted, it is a rail item of its own. */
+  tabOf?: AiObservabilityTabbedItemKey;
   /** Omitted only for `prompts`, whose routes come from the external,
       already-shared `promptRoutes` table (also consumed directly by
       components that build prompt links) — see the `key === "prompts"`
@@ -96,9 +146,9 @@ export interface AiObservabilitySection {
       (here, `quality` for `aiEvaluations`) is read. */
   routeProps?: Record<string, unknown>;
   /** Route `meta.titleKey`, when it must differ from the nav `labelKey` —
-      only `aiEvaluations` needs this: its 4 nav entries each have their own
-      tab label, but the route itself (reachable before any tab is picked)
-      keeps the page-level `onlineEvals.title`. Defaults to `labelKey`. */
+      only `aiEvaluations` needs this: its 4 tabs each have their own label,
+      but the route itself (reachable before any tab is picked) keeps the
+      page-level `onlineEvals.title`. Defaults to `labelKey`. */
   metaTitleKey?: I18nKey;
 }
 
@@ -145,7 +195,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.users",
     icon: "group",
     group: "Monitor",
-    dataTest: "ai-secondary-nav-users",
+    tabOf: "costUsage",
+    dataTest: "ai-section-tab-users",
   },
   {
     key: "budgets",
@@ -156,7 +207,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.budgets",
     icon: "account-balance",
     group: "Monitor",
-    dataTest: "ai-secondary-nav-budgets",
+    tabOf: "costUsage",
+    dataTest: "ai-section-tab-budgets",
   },
   {
     key: "agentGraph",
@@ -167,7 +219,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.agentGraph",
     icon: "hub",
     group: "Monitor",
-    dataTest: "ai-secondary-nav-agent-graph",
+    tabOf: "agents",
+    dataTest: "ai-section-tab-agent-graph",
   },
   {
     key: "agentBehavior",
@@ -178,7 +231,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.agentBehavior",
     icon: "troubleshoot",
     group: "Monitor",
-    dataTest: "ai-secondary-nav-agent-behavior",
+    tabOf: "agents",
+    dataTest: "ai-section-tab-agent-behavior",
   },
   {
     key: "discovery",
@@ -220,7 +274,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.prompts",
     icon: "edit",
     group: "Experiment",
-    dataTest: "ai-secondary-nav-prompts",
+    tabOf: "prompts",
+    dataTest: "ai-section-tab-prompts",
   },
   {
     key: "playground",
@@ -231,7 +286,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.playground",
     icon: "play-circle",
     group: "Experiment",
-    dataTest: "ai-secondary-nav-playground",
+    tabOf: "prompts",
+    dataTest: "ai-section-tab-playground",
   },
   {
     key: "experiments",
@@ -242,7 +298,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.experiments",
     icon: "science",
     group: "Experiment",
-    dataTest: "ai-secondary-nav-experiments",
+    tabOf: "experiments",
+    dataTest: "ai-section-tab-experiments",
   },
   {
     key: "remoteTasks",
@@ -253,7 +310,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.remoteTasks",
     icon: "cloud-upload",
     group: "Experiment",
-    dataTest: "ai-secondary-nav-remote-tasks",
+    tabOf: "experiments",
+    dataTest: "ai-section-tab-remote-tasks",
   },
   {
     key: "quality",
@@ -266,7 +324,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.quality",
     icon: "star-rate",
     group: "Evaluate",
-    dataTest: "ai-secondary-nav-quality",
+    tabOf: "evaluations",
+    dataTest: "ai-section-tab-quality",
     tabQuery: "quality",
   },
   {
@@ -278,7 +337,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.evalJobs",
     icon: "event",
     group: "Evaluate",
-    dataTest: "ai-secondary-nav-eval-jobs",
+    tabOf: "evaluations",
+    dataTest: "ai-section-tab-eval-jobs",
     tabQuery: "jobs",
   },
   {
@@ -290,7 +350,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.scorers",
     icon: "rule",
     group: "Evaluate",
-    dataTest: "ai-secondary-nav-scorers",
+    tabOf: "evaluations",
+    dataTest: "ai-section-tab-scorers",
     tabQuery: "scorers",
   },
   {
@@ -302,7 +363,8 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     labelKey: "aiObservability.nav.scoreConfigs",
     icon: "tune",
     group: "Evaluate",
-    dataTest: "ai-secondary-nav-score-configs",
+    tabOf: "evaluations",
+    dataTest: "ai-section-tab-score-configs",
     tabQuery: "scoreConfigs",
   },
 ];

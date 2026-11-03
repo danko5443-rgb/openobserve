@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Which rail item is lit for the route we are on.
+// Which section (a rail item, or a tab of one) is lit for the route we are on.
+// The shell lifts a tab's key to its rail item through the section's `tabOf`.
 //
 // Matched by PREFIX, not by an exact list: every section grows drill-down routes
 // (`aiExperimentDetail`, `aiDatasetDetail`, `aiQueueWorkbench`) and an exact list
@@ -24,6 +25,9 @@
 const SECTION_BY_ROUTE_PREFIX: ReadonlyArray<readonly [string, string]> = [
   ["aiLLMInsights", "llmInsights"],
   ["aiSession", "sessions"],
+  ["aiIssue", "issues"],
+  ["aiUser", "users"],
+  ["aiBudget", "budgets"],
   ["aiAgentGraph", "agentGraph"],
   ["aiAgentBehavior", "agentBehavior"],
   ["aiDiscovery", "discovery"],

@@ -17117,7 +17117,10 @@
       "scoreConfigs": "Score Configs",
       "remoteTasks": "Remote Tasks",
       "playground": "Playground",
-      "prompts": "Prompts"
+      "prompts": "Prompts",
+      "agents": "Agents",
+      "costUsage": "Cost & Usage",
+      "evaluations": "Evaluations"
     },
     "promptManagement": {
       "subtitle": "Create, version, and release reusable prompts.",

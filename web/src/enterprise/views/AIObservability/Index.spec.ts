@@ -15,10 +15,11 @@
 //
 // @vitest-environment jsdom
 //
-// OSS shows non-Monitor sections locked (feature-gated routes), enterprise/cloud unlocked.
+// OSS shows the enterprise sections locked (feature-gated routes), enterprise/cloud unlocked.
+// Related sections share one rail item and are told apart by the tab strip above the page.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import { nextTick, reactive } from "vue";
 
 let mockIsEnterprise = "false";
@@ -47,12 +48,14 @@ const mockRoute = reactive<{ name: string; query: Record<string, string>; meta: 
   query: {},
   meta: {},
 });
+const mockPush = vi.fn(() => Promise.resolve());
 vi.mock("vue-router", () => ({
   useRoute: () => mockRoute,
+  useRouter: () => ({ push: mockPush }),
 }));
 
 vi.mock("@/types/i18n", async (importOriginal) => {
-  const actual: any = await importOriginal();
+  const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, useI18nTyped: () => ({ t: (key: string) => key }) };
 });
 
@@ -63,12 +66,27 @@ const SectionRailStub = {
     '<div class="section-rail"><template v-for="g in groups" :key="g.label"><i v-for="item in g.items" :key="item.key" :data-rail-item="item.key" /></template></div>',
 };
 
+const OTabsStub = {
+  name: "OTabs",
+  props: ["modelValue", "align"],
+  emits: ["change"],
+  template: '<div data-test="tabs-stub"><slot /></div>',
+};
+
+const OTabStub = {
+  props: ["name", "label", "icon", "suffixIcon"],
+  template: '<b :data-tab="name" :data-suffix="suffixIcon" />',
+};
+
 async function mountShell() {
+  // Imported per test, after vi.resetModules, so each mount reads that test's edition flags.
   const Index = (await import("./Index.vue")).default;
   return mount(Index, {
     global: {
       stubs: {
         SectionRail: SectionRailStub,
+        OTabs: OTabsStub,
+        OTab: OTabStub,
         OPageLayout: { template: '<div><slot name="sidebar" /><slot /></div>' },
         OEmptyState: { template: "<div />" },
         OnlineEvalsDisabled: { template: '<div data-test="online-evals-disabled" />' },
@@ -78,22 +96,36 @@ async function mountShell() {
   });
 }
 
+type Shell = VueWrapper;
+
 interface RailItem {
   key: string;
-  to: unknown;
+  to: { name?: string; query?: Record<string, string> };
   locked?: boolean;
   lockedMessage?: unknown;
 }
 
-function groupsOf(wrapper: Awaited<ReturnType<typeof mountShell>>) {
+function groupsOf(wrapper: Shell) {
   return wrapper.findComponent(SectionRailStub).props("groups") as Array<{
     label: string;
     items: RailItem[];
   }>;
 }
 
-function itemsOf(wrapper: Awaited<ReturnType<typeof mountShell>>) {
+function itemsOf(wrapper: Shell) {
   return groupsOf(wrapper).flatMap((g) => g.items);
+}
+
+function item(wrapper: Shell, key: string) {
+  return itemsOf(wrapper).find((i) => i.key === key)!;
+}
+
+function tabsOf(wrapper: Shell) {
+  return wrapper.findAll("[data-tab]").map((tab) => tab.attributes("data-tab"));
+}
+
+function activeTabOf(wrapper: Shell) {
+  return wrapper.findComponent(OTabsStub).props("modelValue");
 }
 
 const ALL_GROUP_LABELS = [
@@ -103,8 +135,23 @@ const ALL_GROUP_LABELS = [
   "aiObservability.sections.annotate",
 ];
 
+const MONITOR_KEYS = ["llmInsights", "sessions", "issues", "costUsage", "agents"];
+
+// Rendered in group order (Monitor, Evaluate, Experiment, Annotate — see
+// `sectionGroupOrder`), not AI_OBSERVABILITY_SECTIONS's flat order.
+const ALL_ITEM_KEYS = [
+  ...MONITOR_KEYS,
+  "evaluations",
+  "prompts",
+  "experiments",
+  "discovery",
+  "queues",
+  "datasets",
+];
+
 beforeEach(() => {
   vi.resetModules();
+  mockPush.mockClear();
   mockIsEnterprise = "false";
   mockIsCloud = "false";
   mockState.zoConfig = {};
@@ -116,102 +163,55 @@ beforeEach(() => {
 describe("AIObservabilityShell — OSS builds (isEnterprise and isCloud both false)", () => {
   it("still shows every group and every item — nothing is hidden", async () => {
     const wrapper = await mountShell();
-    const groups = groupsOf(wrapper);
-    expect(groups.map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
-    // Rendered in group order (Monitor, Evaluate, Experiment, Annotate —
-    // see `sectionGroupOrder`), not AI_OBSERVABILITY_SECTIONS's flat order.
-    const keys = itemsOf(wrapper).map((i) => i.key);
-    expect(keys).toEqual([
-      "llmInsights",
-      "sessions",
-      "issues",
-      "users",
-      "budgets",
-      "agentGraph",
-      "agentBehavior",
-      "quality",
-      "jobs",
-      "scorers",
-      "scoreConfigs",
-      "prompts",
-      "playground",
-      "experiments",
-      "remoteTasks",
-      "discovery",
-      "queues",
-      "datasets",
-    ]);
+    expect(groupsOf(wrapper).map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
+    expect(itemsOf(wrapper).map((i) => i.key)).toEqual(ALL_ITEM_KEYS);
   });
 
-  it("leaves LLM Insights + Sessions unlocked — OSS serves them for real", async () => {
+  it("leaves the sections OSS serves for real unlocked", async () => {
     const wrapper = await mountShell();
-    const items = itemsOf(wrapper);
-    const llmInsights = items.find((i) => i.key === "llmInsights")!;
-    const sessions = items.find((i) => i.key === "sessions")!;
-    expect(llmInsights.locked).toBeFalsy();
-    expect(sessions.locked).toBeFalsy();
+    for (const key of ["llmInsights", "sessions", "issues", "costUsage"]) {
+      expect(item(wrapper, key).locked, key).toBeFalsy();
+    }
   });
 
   it("locks every other item with a message, instead of hiding it", async () => {
     const wrapper = await mountShell();
-    const items = itemsOf(wrapper);
-    const lockedKeys = [
-      "agentGraph",
-      "agentBehavior",
+    for (const key of [
+      "agents",
+      "evaluations",
+      "prompts",
+      "experiments",
       "discovery",
       "queues",
       "datasets",
-      "prompts",
-      "playground",
-      "experiments",
-      "remoteTasks",
-      "quality",
-      "jobs",
-      "scorers",
-      "scoreConfigs",
-    ];
-    for (const key of lockedKeys) {
-      const item = items.find((i) => i.key === key)!;
-      expect(item.locked, `${key} should be locked on a true OSS build`).toBe(true);
-      expect(item.lockedMessage, `${key} should carry a lockedMessage`).toBeTruthy();
+    ]) {
+      expect(item(wrapper, key).locked, `${key} should be locked on a true OSS build`).toBe(true);
+      expect(item(wrapper, key).lockedMessage, `${key} should carry a lockedMessage`).toBeTruthy();
     }
   });
 
-  it("points every item at the route name the enterprise rail uses too — same registry, same names", async () => {
+  it("points each tabbed item at its first tab's route", async () => {
     const wrapper = await mountShell();
-    const items = itemsOf(wrapper);
-    expect((items.find((i) => i.key === "llmInsights")!.to as any).name).toBe("aiLLMInsights");
-    expect((items.find((i) => i.key === "sessions")!.to as any).name).toBe("aiSessions");
-    expect((items.find((i) => i.key === "agentGraph")!.to as any).name).toBe("aiAgentGraph");
-    // The four Evaluate tabs all share one route, distinguished by `tab`.
-    for (const key of ["quality", "jobs", "scorers", "scoreConfigs"]) {
-      const to = items.find((i) => i.key === key)!.to as any;
-      expect(to.name).toBe("aiEvaluations");
-      expect(to.query.tab).toBe(key);
-    }
+    expect(item(wrapper, "llmInsights").to.name).toBe("aiLLMInsights");
+    expect(item(wrapper, "costUsage").to.name).toBe("aiUsers");
+    expect(item(wrapper, "agents").to.name).toBe("aiAgentGraph");
+    expect(item(wrapper, "prompts").to.name).toBe("aiPrompts");
+    expect(item(wrapper, "experiments").to.name).toBe("aiExperiments");
+    expect(item(wrapper, "evaluations").to).toEqual({
+      name: "aiEvaluations",
+      query: { org_identifier: "test-org", tab: "quality" },
+    });
+  });
+
+  it("sends a locked tab to the enterprise features page, not its route", async () => {
+    mockRoute.name = "aiEvaluations";
+    mockRoute.query = { tab: "quality" };
+    const wrapper = await mountShell();
+    expect(wrapper.find('[data-tab="jobs"]').attributes("data-suffix")).toBe("lock");
+    wrapper.findComponent(OTabsStub).vm.$emit("change", "jobs");
+    expect(mockPush).toHaveBeenCalledWith({ name: "enterpriseFeatures" });
   });
 });
-
-const ALL_ITEM_KEYS = [
-  "llmInsights",
-  "sessions",
-  "issues",
-  "users",
-  "budgets",
-  "agentGraph",
-  "agentBehavior",
-  "quality",
-  "jobs",
-  "scorers",
-  "scoreConfigs",
-  "prompts",
-  "playground",
-  "experiments",
-  "remoteTasks",
-  "discovery",
-  "queues",
-  "datasets",
-];
 
 describe("AIObservabilityShell — enterprise/cloud builds with online evaluations on", () => {
   beforeEach(() => {
@@ -223,16 +223,7 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     const groups = groupsOf(wrapper);
     expect(groups.map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
-    const monitorKeys = groups[0].items.map((i) => i.key);
-    expect(monitorKeys).toEqual([
-      "llmInsights",
-      "sessions",
-      "issues",
-      "users",
-      "budgets",
-      "agentGraph",
-      "agentBehavior",
-    ]);
+    expect(groups[0].items.map((i) => i.key)).toEqual(MONITOR_KEYS);
     expect(itemsOf(wrapper).map((i) => i.key)).toEqual(ALL_ITEM_KEYS);
     expect(itemsOf(wrapper).every((i) => !i.locked)).toBe(true);
   });
@@ -242,15 +233,7 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     const groups = groupsOf(wrapper);
     expect(groups).toHaveLength(4);
-    expect(groups[0].items.map((i) => i.key)).toEqual([
-      "llmInsights",
-      "sessions",
-      "issues",
-      "users",
-      "budgets",
-      "agentGraph",
-      "agentBehavior",
-    ]);
+    expect(groups[0].items.map((i) => i.key)).toEqual(MONITOR_KEYS);
     expect(itemsOf(wrapper).every((i) => !i.locked)).toBe(true);
   });
 
@@ -261,6 +244,60 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     expect(wrapper.find('[data-test="router-view"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="online-evals-disabled"]').exists()).toBe(false);
+  });
+});
+
+describe("AIObservabilityShell — tabs of a rail item", () => {
+  beforeEach(() => {
+    mockIsEnterprise = "true";
+    mockState.zoConfig = { version: "v1", online_evals_enabled: true };
+  });
+
+  it.each([
+    ["aiAgentBehavior", {}, "agents", "agentBehavior", ["agentGraph", "agentBehavior"]],
+    ["aiBudgets", {}, "costUsage", "budgets", ["users", "budgets"]],
+    ["aiPlayground", {}, "prompts", "playground", ["prompts", "playground"]],
+    ["aiRemoteTaskDetail", {}, "experiments", "remoteTasks", ["experiments", "remoteTasks"]],
+    [
+      "aiEvaluations",
+      { tab: "scorers" },
+      "evaluations",
+      "scorers",
+      ["quality", "jobs", "scorers", "scoreConfigs"],
+    ],
+    ["aiEvaluations", {}, "evaluations", "quality", ["quality", "jobs", "scorers", "scoreConfigs"]],
+  ])("on %s %o lights rail item %s and tab %s", async (name, query, railKey, tab, tabs) => {
+    mockRoute.name = name;
+    mockRoute.query = query as Record<string, string>;
+    const wrapper = await mountShell();
+    expect(wrapper.findComponent(SectionRailStub).props("activeKey")).toBe(railKey);
+    expect(tabsOf(wrapper)).toEqual(tabs);
+    expect(activeTabOf(wrapper)).toBe(tab);
+  });
+
+  it("draws no tab strip for a rail item of its own", async () => {
+    mockRoute.name = "aiQueueDetail";
+    const wrapper = await mountShell();
+    expect(wrapper.findComponent(SectionRailStub).props("activeKey")).toBe("queues");
+    expect(wrapper.find('[data-test="ai-section-tabs"]').exists()).toBe(false);
+  });
+
+  it("opens another tab on its own route, keeping the org", async () => {
+    mockRoute.name = "aiEvaluations";
+    mockRoute.query = { tab: "quality" };
+    const wrapper = await mountShell();
+    wrapper.findComponent(OTabsStub).vm.$emit("change", "scoreConfigs");
+    expect(mockPush).toHaveBeenCalledWith({
+      name: "aiEvaluations",
+      query: { org_identifier: "test-org", tab: "scoreConfigs" },
+    });
+  });
+
+  it("does not navigate when the active tab is picked again", async () => {
+    mockRoute.name = "aiAgentGraph";
+    const wrapper = await mountShell();
+    wrapper.findComponent(OTabsStub).vm.$emit("change", "agentGraph");
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });
 
@@ -277,16 +314,14 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
       "aiObservability.sections.monitor",
       "aiObservability.sections.experiment",
     ]);
-    expect(itemsOf(wrapper).map((i) => i.key)).toEqual([
-      "llmInsights",
-      "sessions",
-      "issues",
-      "users",
-      "budgets",
-      "agentGraph",
-      "agentBehavior",
-      "prompts",
-    ]);
+    expect(itemsOf(wrapper).map((i) => i.key)).toEqual([...MONITOR_KEYS, "prompts"]);
+  });
+
+  it("drops the Playground tab, leaving Prompts without a tab strip", async () => {
+    mockRoute.name = "aiPrompts";
+    const wrapper = await mountShell();
+    expect(wrapper.findComponent(SectionRailStub).props("activeKey")).toBe("prompts");
+    expect(wrapper.find('[data-test="ai-section-tabs"]').exists()).toBe(false);
   });
 
   it("renders the disabled state instead of the page on a deep link to an evaluation route", async () => {
@@ -296,6 +331,8 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     expect(wrapper.find('[data-test="online-evals-disabled"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="router-view"]').exists()).toBe(false);
+    // The rail item stays lit even though the rail no longer lists it.
+    expect(wrapper.findComponent(SectionRailStub).props("activeKey")).toBe("evaluations");
   });
 
   it("swaps the page for the disabled state and drops the sections when /config turns evaluations off", async () => {
@@ -305,6 +342,7 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     expect(wrapper.find('[data-test="router-view"]').exists()).toBe(true);
     expect(wrapper.find('[data-rail-item="experiments"]').exists()).toBe(true);
+    expect(tabsOf(wrapper)).toEqual(["experiments", "remoteTasks"]);
 
     mockState.zoConfig = { version: "v1", online_evals_enabled: false };
     await nextTick();
@@ -312,6 +350,7 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     expect(wrapper.find('[data-test="router-view"]').exists()).toBe(false);
     expect(wrapper.find('[data-rail-item="prompts"]').exists()).toBe(true);
     expect(wrapper.find('[data-rail-item="experiments"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="ai-section-tabs"]').exists()).toBe(false);
   });
 
   it("keeps every section, locked, on OSS — the edition gate applies there, not the flag", async () => {

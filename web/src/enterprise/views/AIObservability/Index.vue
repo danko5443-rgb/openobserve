@@ -18,7 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   AI Observability module shell — mirrors the Settings/IAM scaffold so the
   module fits the new app-wide UX (left section rail + breadcrumb in the top
   chrome). The rail is data-driven via SectionHubGroup[]; routing each item
-  picks the route the rail/breadcrumb highlight.
+  picks the route the rail/breadcrumb highlight. A rail item that holds several
+  sections (AI_OBSERVABILITY_TABBED_ITEMS) draws them as a tab strip above the
+  page; each tab is its own route, so the page under it is unchanged.
 -->
 <template>
   <OPageLayout bleed :sidebar-width="railCollapsed ? RAIL_COLLAPSED_WIDTH : RAIL_WIDTH">
@@ -33,13 +35,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       />
     </template>
 
-    <section class="h-full min-h-0 min-w-0 overflow-y-auto">
-      <OnlineEvalsDisabled v-if="onlineEvalsRouteOff" />
-      <!-- Pages hand questions to the O2 AI panel (AIO-36 "Explain"); MainLayout listens here. -->
-      <router-view
-        v-else
-        @send-to-ai-chat="(...args: unknown[]) => emit('sendToAiChat', ...args)"
-      />
+    <section class="flex h-full min-h-0 min-w-0 flex-col">
+      <div
+        v-if="activeTabs.length > 1"
+        class="border-border-default px-page-edge shrink-0 border-b"
+        data-test="ai-section-tabs"
+      >
+        <OTabs :model-value="activeTab" align="left" @change="openTab">
+          <OTab
+            v-for="tab in activeTabs"
+            :key="tab.key"
+            :name="tab.key"
+            :label="tab.label"
+            :icon="tab.icon"
+            :suffix-icon="tab.locked ? 'lock' : undefined"
+            :data-test="tab.locked ? `${tab.dataTest}-locked` : tab.dataTest"
+          />
+        </OTabs>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <OnlineEvalsDisabled v-if="onlineEvalsRouteOff" />
+        <!-- Pages hand questions to the O2 AI panel (AIO-36 "Explain"); MainLayout listens here. -->
+        <router-view
+          v-else
+          @send-to-ai-chat="(...args: unknown[]) => emit('sendToAiChat', ...args)"
+        />
+      </div>
     </section>
   </OPageLayout>
 </template>
@@ -48,8 +69,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import { computed, ref, watch } from "vue";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
 import { useStore } from "vuex";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import OPageLayout from "@/lib/core/PageLayout/OPageLayout.vue";
+import OTabs from "@/lib/navigation/Tabs/OTabs.vue";
+import OTab from "@/lib/navigation/Tabs/OTab.vue";
 import SectionRail from "@/components/common/SectionRail.vue";
 import type { SectionHubGroup, SectionHubItem } from "@/components/common/SectionHub.vue";
 import { navSection } from "./navSection";
@@ -57,7 +80,10 @@ import type { IconName } from "@/lib/core/Icon/OIcon.icons";
 import { buildFeatureGateContext, checkFeatureAccess } from "@/utils/enterpriseFeatures";
 import {
   AI_OBSERVABILITY_SECTIONS,
+  AI_OBSERVABILITY_TABBED_ITEMS,
   ONLINE_EVAL_FEATURE_KEYS,
+  type AiObservabilityGroup,
+  type AiObservabilityTabbedItemKey,
 } from "@/composables/shared/useAIObservabilityRoutes";
 import {
   hidesOnlineEvalEntries,
@@ -103,30 +129,37 @@ defineOptions({ name: "AIObservabilityShell" });
 const { t } = useI18nTyped();
 const store = useStore();
 const route = useRoute();
+const router = useRouter();
 
 const orgQuery = computed(() => ({
   org_identifier: store.state.selectedOrganization?.identifier,
 }));
 
-const activeSection = computed<string>(() => navSection(route.name, route.query.tab));
+/** The lit section: a rail item of its own, or a tab of one. */
+const activeTab = computed<string>(() => navSection(route.name, route.query.tab));
 
 // A deep link to an evaluation page with evaluations off renders the disabled state instead.
 const onlineEvalsRouteOff = useOnlineEvalsRouteOff();
 
-// Single source of truth for the rail items (groups) AND the breadcrumb
+type SectionEntry = SectionHubItem & {
+  group: AiObservabilityGroup;
+  tabOf?: AiObservabilityTabbedItemKey;
+};
+
+// Single source of truth for the rail items, their tabs AND the breadcrumb
 // switcher, derived from AI_OBSERVABILITY_SECTIONS — the SAME list the OSS
 // and enterprise routers build their /ai routes from (see
 // composables/shared/useAIObservabilityRoutes.ts), so a nav item's
 // `featureKey`/`routeName` can't drift from what actually gates/names its
-// route. Every section beyond Monitor's LLM Insights + Sessions is
-// enterprise/cloud-only — rather than hiding those items in OSS, they stay
-// visible but locked (lock icon + pitch-card tooltip), matching the
+// route. Every section beyond LLM Insights, Sessions, Issues, Users and
+// Budgets is enterprise/cloud-only — rather than hiding those in OSS, they
+// stay visible but locked (lock icon + pitch-card tooltip), matching the
 // Settings/IAM rail pattern.
-const sectionItems = computed<(SectionHubItem & { group: string })[]>(() => {
+const sectionEntries = computed<SectionEntry[]>(() => {
   const featureGateCtx = buildFeatureGateContext(store.state.zoConfig);
   // With online evaluations off the server serves no evaluation sections, so drop them.
   const hideEvalSections = hidesOnlineEvalEntries(store.state.zoConfig);
-  // Memoized per featureKey, not per nav item — the four Evaluate entries
+  // Memoized per featureKey, not per section — the four Evaluations tabs
   // share one key and would otherwise recompute the same access check 4x.
   const accessByFeatureKey = new Map<string, ReturnType<typeof checkFeatureAccess>>();
   const sections = hideEvalSections
@@ -156,15 +189,72 @@ const sectionItems = computed<(SectionHubItem & { group: string })[]>(() => {
       },
       dataTest: section.dataTest,
       group: section.group,
+      tabOf: section.tabOf,
       locked,
       lockedMessage,
     };
   });
 });
 
-const activeSectionItem = computed(() =>
-  sectionItems.value.find((i) => i.key === activeSection.value),
+const tabsByItem = computed(() => {
+  const tabs = new Map<AiObservabilityTabbedItemKey, SectionEntry[]>();
+  for (const entry of sectionEntries.value) {
+    if (!entry.tabOf) continue;
+    tabs.set(entry.tabOf, [...(tabs.get(entry.tabOf) ?? []), entry]);
+  }
+  return tabs;
+});
+
+// One rail item per standalone section and per tabbed item, placed where its
+// first tab sits. A tabbed item opens on its first unlocked tab and is locked
+// only when every tab is.
+const railItems = computed<SectionEntry[]>(() => {
+  const items: SectionEntry[] = [];
+  for (const entry of sectionEntries.value) {
+    if (!entry.tabOf) {
+      items.push(entry);
+      continue;
+    }
+    const tabs = tabsByItem.value.get(entry.tabOf)!;
+    if (tabs[0] !== entry) continue;
+    const item = AI_OBSERVABILITY_TABBED_ITEMS[entry.tabOf];
+    const open = tabs.find((tab) => !tab.locked);
+    items.push({
+      key: entry.tabOf,
+      label: t(item.labelKey),
+      icon: item.icon,
+      to: (open ?? entry).to,
+      dataTest: item.dataTest,
+      group: entry.group,
+      locked: !open || undefined,
+      lockedMessage: open ? undefined : entry.lockedMessage,
+    });
+  }
+  return items;
+});
+
+// Looked up in the full table, not the listed entries: a deep link to a
+// section the rail hides still lights its rail item.
+const TAB_OF_SECTION = new Map(AI_OBSERVABILITY_SECTIONS.map((s) => [s.key, s.tabOf]));
+
+const activeSection = computed<string>(
+  () => TAB_OF_SECTION.get(activeTab.value) ?? activeTab.value,
 );
+
+const activeTabs = computed<SectionEntry[]>(() => {
+  const item = TAB_OF_SECTION.get(activeTab.value);
+  return item ? (tabsByItem.value.get(item) ?? []) : [];
+});
+
+// A locked tab goes where a locked rail item does (see SectionRail).
+function openTab(key: string | number) {
+  if (key === activeTab.value) return;
+  const tab = activeTabs.value.find((entry) => entry.key === key);
+  if (!tab) return;
+  Promise.resolve(router.push(tab.locked ? { name: "enterpriseFeatures" } : tab.to)).catch(
+    () => {},
+  );
+}
 
 // Group order: Monitor, then Evaluate, then Experiment, then Annotate at the
 // bottom. Experiment is its own section (not an Evaluate sub-item) because an
@@ -180,7 +270,7 @@ const groupLabels = computed<Record<string, I18nText>>(() => ({
 
 const sectionGroups = computed<SectionHubGroup[]>(() => {
   const buckets = new Map<string, SectionHubItem[]>();
-  for (const item of sectionItems.value) {
+  for (const item of railItems.value) {
     const g = item.group;
     if (!buckets.has(g)) buckets.set(g, []);
     buckets.get(g)!.push(item);
@@ -193,8 +283,4 @@ const sectionGroups = computed<SectionHubGroup[]>(() => {
     .sort((a, b) => rank(a) - rank(b))
     .map((key) => ({ label: groupLabels.value[key] ?? raw(key), items: buckets.get(key)! }));
 });
-
-// Reserved for future per-section header chrome wiring (mirrors Settings'
-// activeSectionItem use). Keeping the reference live for clarity.
-void activeSectionItem.value;
 </script>
