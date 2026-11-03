@@ -256,12 +256,14 @@ mod m20261025_000005_add_held_action_to_slack_link_requests;
 mod m20261026_000001_backfill_v1_rca_pointer;
 mod m20261027_000001_alter_query_history;
 mod m20261028_000001_add_group_label_set_to_alert_states;
+mod m20261028_000001_add_llm_dataset_item_write_version;
 mod m20261029_000001_widen_alert_dedup_fingerprint;
 mod m20261030_000001_add_agent_to_ai_chat_turns;
 mod m20261030_000001_add_suppress_repeats_to_alerts;
 mod m20261030_000001_create_org_domain_ownership_table;
 mod m20261030_000002_create_org_domain_ownership_req_table;
 mod m20261101_000001_create_oncall_slack;
+mod m20261103_000001_add_status_streaks_to_synthetics;
 /// Shared body of the two `folder_id` migrations above; not a migration itself.
 mod workflow_folder_id;
 
@@ -781,6 +783,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000001_create_org_domain_ownership_table::Migration),
             Box::new(m20261030_000002_create_org_domain_ownership_req_table::Migration),
             Box::new(m20261101_000001_create_oncall_slack::Migration),
+            Box::new(m20261103_000001_add_status_streaks_to_synthetics::Migration),
+            Box::new(m20261028_000001_add_llm_dataset_item_write_version::Migration),
             Box::new(m20261030_000001_add_agent_to_ai_chat_turns::Migration),
             Box::new(m20261016_000001_add_first_event_at_to_ai_chat_turns::Migration),
             Box::new(m20261020_000001_add_health_to_org_ai_toolsets::Migration),
@@ -895,12 +899,14 @@ mod tests {
             "m20261030_000002_create_org_domain_ownership_req_table",
         ),
         (132, "m20261101_000001_create_oncall_slack"),
-        (133, "m20261016_000001_add_first_event_at_to_ai_chat_turns"),
-        (134, "m20261020_000005_create_ai_turn_marks"),
-        (135, "m20261021_000005_create_ai_chat_imports"),
-        (136, "m20261021_000006_create_paid_overage_attribution"),
-        (137, "m20261021_000007_create_ai_approvals"),
-        (138, "m20261030_000001_add_agent_to_ai_chat_turns"),
+        (133, "m20261103_000001_add_status_streaks_to_synthetics"),
+        (134, "m20261028_000001_add_llm_dataset_item_write_version"),
+        (135, "m20261016_000001_add_first_event_at_to_ai_chat_turns"),
+        (136, "m20261020_000005_create_ai_turn_marks"),
+        (137, "m20261021_000005_create_ai_chat_imports"),
+        (138, "m20261021_000006_create_paid_overage_attribution"),
+        (139, "m20261021_000007_create_ai_approvals"),
+        (140, "m20261030_000001_add_agent_to_ai_chat_turns"),
     ];
 
     // Two branches that each claim the next version merge cleanly, so a reused number must fail

@@ -52,6 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             >
               <OFormSelect
                 :name="`filters[${idx}].field`"
+                :aria-label="t('common.field')"
                 :data-test="`anomaly-filter-field-${idx}`"
                 :options="filteredStreamFields"
                 :placeholder="filter.field ? raw('') : t('alerts.anomaly.fieldPlaceholder')"
@@ -70,6 +71,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               </OFormSelect>
               <OFormSelect
                 :name="`filters[${idx}].operator`"
+                :aria-label="t('common.operator')"
                 :data-test="`anomaly-filter-operator-${idx}`"
                 :options="filterOperators"
                 class="alert-v3-select max-w-27.5 min-w-27.5"
@@ -77,6 +79,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               <OFormInput
                 v-if="operatorNeedsValue(filter.operator)"
                 :name="`filters[${idx}].value`"
+                :aria-label="t('common.value')"
                 :data-test="`anomaly-filter-value-${idx}`"
                 :placeholder="t('alerts.placeholders.value')"
                 class="alert-v3-input max-w-40"
@@ -205,6 +208,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               <OFormSelect
                 name="detection_function"
                 :options="detectionFunctions"
+                :aria-label="t('alerts.detectionFunction')"
                 data-test="anomaly-detection-function"
                 class="alert-v3-select max-w-27.5 min-w-27.5"
                 @update:model-value="onDetectionFunctionChange"
@@ -217,6 +221,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   detectionFunctionField ? raw('') : t('alerts.anomaly.fieldPlaceholder')
                 "
                 :loading="loadingFields"
+                :aria-label="t('alerts.anomaly.detectionFunctionField')"
                 data-test="anomaly-detection-function-field"
                 class="alert-v3-select max-w-35 min-w-24 flex-1"
               >
@@ -255,6 +260,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   type="number"
                   min="1"
                   class="alert-v3-input max-w-21.75 min-w-21.75"
+                  :aria-label="t('alerts.anomaly.detectionResolution')"
                   data-test="anomaly-histogram-interval-value"
                 >
                   <!-- Message rendered below at pair width — see histogramIntervalError. -->
@@ -266,6 +272,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   label-key="label"
                   value-key="value"
                   class="alert-v3-select max-w-25 min-w-25"
+                  :aria-label="
+                    t('common.unitFor', { label: t('alerts.anomaly.detectionResolution') })
+                  "
                   data-test="anomaly-histogram-interval-unit"
                 />
               </div>
@@ -302,6 +311,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 type="number"
                 min="1"
                 class="alert-v3-input max-w-21.75 min-w-21.75"
+                :aria-label="t('alerts.anomaly.detectionResolution')"
                 data-test="anomaly-histogram-interval-value"
               >
                 <!-- Message rendered below at pair width — see histogramIntervalError. -->
@@ -313,6 +323,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 label-key="label"
                 value-key="value"
                 class="alert-v3-select max-w-25 min-w-25"
+                :aria-label="
+                  t('common.unitFor', { label: t('alerts.anomaly.detectionResolution') })
+                "
                 data-test="anomaly-histogram-interval-unit"
               />
             </div>
@@ -352,6 +365,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   type="number"
                   min="1"
                   class="alert-v3-input max-w-21.75 min-w-21.75"
+                  :aria-label="t('alerts.anomaly.checkEvery')"
                   data-test="anomaly-schedule-interval-value"
                 >
                   <!-- Message rendered below at pair width — see scheduleIntervalError. -->
@@ -363,6 +377,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   label-key="label"
                   value-key="value"
                   class="alert-v3-select max-w-25 min-w-25"
+                  :aria-label="t('common.unitFor', { label: t('alerts.anomaly.checkEvery') })"
                   data-test="anomaly-schedule-interval-unit"
                 />
               </div>
@@ -399,6 +414,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   type="number"
                   min="1"
                   class="alert-v3-input max-w-21.75 min-w-21.75"
+                  :aria-label="t('alerts.anomaly.lookBackWindow')"
                   data-test="anomaly-detection-window-value"
                 >
                   <!-- Message rendered below at pair width — see detectionWindowError. -->
@@ -410,6 +426,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   label-key="label"
                   value-key="value"
                   class="alert-v3-select max-w-25 min-w-25"
+                  :aria-label="t('common.unitFor', { label: t('alerts.anomaly.lookBackWindow') })"
                   data-test="anomaly-detection-window-unit"
                 />
               </div>
@@ -467,6 +484,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 type="number"
                 :min="1"
                 :suffix="t('alerts.anomaly.daysUnit')"
+                :aria-label="t('alerts.trainingWindow')"
                 data-test="anomaly-training-window"
                 class="alert-v3-input max-w-30 min-w-30"
               />
@@ -499,6 +517,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 :options="retrainIntervalOptions"
                 label-key="label"
                 value-key="value"
+                :aria-label="t('alerts.anomaly.retrainEvery')"
                 data-test="anomaly-retrain-interval"
                 class="alert-v3-select max-w-50"
               />
@@ -564,6 +583,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   label-key="label"
                   value-key="value"
                   class="alert-v3-select min-w-25"
+                  :aria-label="t('alerts.anomaly.budgetPeriod')"
                   data-test="anomaly-budget-period"
                 />
               </div>

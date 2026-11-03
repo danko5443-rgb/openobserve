@@ -326,7 +326,10 @@ import PlaygroundVariableBar from "@/enterprise/components/AIObservability/Playg
 import PlaygroundVariantColumn from "@/enterprise/components/AIObservability/PlaygroundVariantColumn.vue";
 import SaveAsPromptDialog from "@/views/AIObservability/SaveAsPromptDialog.vue";
 import type { PromptConfig } from "@/services/llm-prompts.service";
-import onlineEvalsService, { type Provider, type Scorer } from "@/services/online-evals.service";
+import { type Provider, type Scorer } from "@/services/online-evals.service";
+import { providersQuery, scorersQuery } from "@/services/online-evals.service.queries";
+import { llmDatasetsQuery } from "@/services/llm-datasets.service.queries";
+import { queryClient } from "@/composables/query/queryClient";
 import { entityId } from "@/enterprise/components/onlineEvals/utils/evalEntity";
 import llmDatasetsService, {
   inputFieldVariables,
@@ -562,10 +565,12 @@ onBeforeUnmount(() => {
   stopAll();
 });
 
+// The three lists are the org's shared cache entries (Evaluations and Datasets read the same
+// ones), so a revisit inside their stale time costs no request; every write invalidates them.
 async function loadProviders() {
   loadingProviders.value = true;
   try {
-    providers.value = chatProviders(await onlineEvalsService.providers.list(orgId.value));
+    providers.value = chatProviders(await queryClient.fetchQuery(providersQuery(orgId.value)));
     seedDefaultProvider();
   } catch {
     toast({ variant: "error", message: t("aiObservability.playground.providerLoadError") });
@@ -577,7 +582,7 @@ async function loadProviders() {
 /** A failure here costs scoring, not the bench — the menu simply lists none. */
 async function loadScorers() {
   try {
-    scorers.value = await onlineEvalsService.scorers.list(orgId.value);
+    scorers.value = await queryClient.fetchQuery(scorersQuery(orgId.value));
   } catch {
     toast({ variant: "error", message: t("aiObservability.playground.scorerLoadError") });
   }
@@ -585,7 +590,7 @@ async function loadScorers() {
 
 async function loadDatasets() {
   try {
-    datasets.value = await llmDatasetsService.list(orgId.value);
+    datasets.value = await queryClient.fetchQuery(llmDatasetsQuery(orgId.value));
   } catch {
     toast({ variant: "error", message: t("aiObservability.playground.datasetLoadError") });
   }

@@ -108,6 +108,7 @@ export default defineComponent({
       alertTemplates: "templates",
       modelPricing: "model_pricing",
       modelPricingEditor: "model_pricing",
+      modelPricingGaps: "model_pricing",
       llmProviders: "llm_providers",
       storageSettings: "storageSettings",
       cipherKeys: "cipher-keys",
