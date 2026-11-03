@@ -14539,7 +14539,6 @@
     "storageSettingsDesc": "Per-organization storage configuration",
     "modelPricingDesc": "LLM model cost configuration",
     "correlationSettingsDesc": "Telemetry correlation configuration",
-    "llmProvidersDesc": "LLM providers for online evaluations",
     "queryManagementDesc": "Inspect and cancel running queries",
     "nodesDesc": "Cluster nodes and their health",
     "licenseDesc": "Enterprise license details",
@@ -14898,9 +14897,6 @@
       "alreadyExists": "Pattern \"{name}\" already exists. Please use a different name.",
       "importPatternFailed": "Failed to import pattern \"{name}\": {error}",
       "createFailed": "Regex pattern - {index}: \"{name}\" creation failed --> \n Reason: {error}"
-    },
-    "index": {
-      "genAiAgentMappingDesc": "Map GenAI spans to agent identifiers"
     },
     "organizationManagementPage": {
       "setUsageLimits": "Set Usage Limits",
@@ -16036,7 +16032,7 @@
       "failedToLoad": "Failed to load Insights",
       "retry": "Retry",
       "noAgentsInRange": "No Agents In This Range",
-      "noAgentsDescription": "No GenAI agents were detected for the selected time window. Try a wider range, switch to the Stream tab, or configure agent mapping in settings.",
+      "noAgentsDescription": "No GenAI agents were detected for the selected time window. Try a wider range, switch to the Stream tab, or configure Agent Mapping.",
       "viewByStream": "View by Stream",
       "totalCost": "Total Cost",
       "totalTokens": "Total Tokens",
@@ -17097,7 +17093,8 @@
       "monitor": "Monitor",
       "annotate": "Annotate",
       "evaluate": "Evaluate",
-      "experiment": "Experiment"
+      "experiment": "Experiment",
+      "configure": "Configure"
     },
     "nav": {
       "llmInsights": "Insights",
@@ -17749,7 +17746,7 @@
         "providerEndpointLabel": "Endpoint:",
         "providerDefaultModelLabel": "Default model:",
         "providerHelp": "Choose the LLM Provider this experiment calls. Manage providers in {settingsLink}.",
-        "providerHelpSettingsLink": "Settings",
+        "providerHelpLink": "LLM Providers",
         "temperatureLabel": "Temperature",
         "temperatureHelp": "0–2. Higher varies the output.",
         "temperatureDeterministic": "0 — the model answers the same way every time.",
@@ -19198,7 +19195,7 @@
       },
       "noProviders": {
         "title": "Add a Provider First",
-        "description": "Scorers need an LLM Provider (OpenAI, Anthropic, etc.) to run. Add a provider in Settings before creating scorers."
+        "description": "Scorers need an LLM Provider (OpenAI, Anthropic, etc.) to run. Add one under LLM Providers before creating scorers."
       },
       "import": {
         "title": "Import Scorer",
@@ -19235,7 +19232,7 @@
       "editTitleLlm": "Update LLM Judge Scorer",
       "descriptionPlaceholder": "A short summary of what this scorer measures.",
       "providerHelp": "Choose the LLM Provider this judge calls. Manage providers in {settingsLink}.",
-      "providerHelpSettingsLink": "Settings",
+      "providerHelpLink": "LLM Providers",
       "refreshProviders": "Refresh Providers",
       "selectedPrefix": "Selected:",
       "endpointLabel": "Endpoint:",

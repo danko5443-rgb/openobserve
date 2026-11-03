@@ -37,6 +37,9 @@ const SECTION_BY_ROUTE_PREFIX: ReadonlyArray<readonly [string, string]> = [
   ["aiPlayground", "playground"],
   ["aiExperiment", "experiments"],
   ["aiRemoteTask", "remoteTasks"],
+  // Configure: route names kept from their time in Settings.
+  ["llmProviders", "llmProviders"],
+  ["genAiAgentMapping", "agentMapping"],
 ];
 
 /**

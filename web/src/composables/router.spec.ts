@@ -102,6 +102,8 @@ describe("useOSRoutes", () => {
         "aiRemoteTaskEdit",
         "aiRemoteTaskDetail",
         "aiEvaluations",
+        "llmProviders",
+        "genAiAgentMapping",
       ]),
     );
   });

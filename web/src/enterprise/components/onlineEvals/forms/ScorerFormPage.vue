@@ -172,7 +172,7 @@
                         class="scorer-field__help-link text-accent font-semibold no-underline hover:underline"
                         target="_blank"
                       >
-                        {{ t("onlineEvals.scorer.providerHelpSettingsLink") }}
+                        {{ t("onlineEvals.scorer.providerHelpLink") }}
                       </router-link>
                     </template>
                   </i18n-t>

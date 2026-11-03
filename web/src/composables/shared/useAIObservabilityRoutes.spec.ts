@@ -44,10 +44,12 @@ describe("useAIObservabilityRouteChildren — online evaluations gate", () => {
       "aiRemoteTaskEdit",
       "aiRemoteTaskDetail",
       "aiEvaluations",
+      // `/providers` is registered only with evaluations on.
+      "llmProviders",
     ]);
   });
 
-  it("leaves Monitor and Prompts alone — their APIs do not depend on evaluations", () => {
+  it("leaves Monitor, Prompts and Agent Mapping alone — their APIs do not depend on evaluations", () => {
     expect(namesWhere(false)).toEqual([
       "aiLLMInsights",
       "aiSessions",
@@ -59,6 +61,7 @@ describe("useAIObservabilityRouteChildren — online evaluations gate", () => {
       "aiPrompts",
       "aiPromptCreate",
       "aiPromptVersionCreate",
+      "genAiAgentMapping",
     ]);
   });
 });

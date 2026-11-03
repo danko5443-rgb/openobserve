@@ -162,11 +162,11 @@ const sectionEntries = computed<SectionEntry[]>(() => {
   // Memoized per featureKey, not per section — the four Evaluations tabs
   // share one key and would otherwise recompute the same access check 4x.
   const accessByFeatureKey = new Map<string, ReturnType<typeof checkFeatureAccess>>();
-  const sections = hideEvalSections
-    ? AI_OBSERVABILITY_SECTIONS.filter(
-        (section) => !section.featureKey || !ONLINE_EVAL_FEATURE_KEYS[section.featureKey],
-      )
-    : AI_OBSERVABILITY_SECTIONS;
+  const sections = AI_OBSERVABILITY_SECTIONS.filter(
+    (section) =>
+      !(hideEvalSections && section.featureKey && ONLINE_EVAL_FEATURE_KEYS[section.featureKey]) &&
+      (!section.requiresConfigFlag || store.state.zoConfig?.[section.requiresConfigFlag] === true),
+  );
   return sections.map((section) => {
     let locked: boolean | undefined;
     let lockedMessage: I18nText | undefined;
@@ -256,16 +256,18 @@ function openTab(key: string | number) {
   );
 }
 
-// Group order: Monitor, then Evaluate, then Experiment, then Annotate at the
-// bottom. Experiment is its own section (not an Evaluate sub-item) because an
-// experiment is a run you author, not a scoring config you maintain.
-const sectionGroupOrder = ["Monitor", "Evaluate", "Experiment", "Annotate"];
+// Group order: Monitor, then Evaluate, then Experiment, then Annotate, then
+// Configure last. Experiment is its own section (not an Evaluate sub-item)
+// because an experiment is a run you author, not a scoring config you
+// maintain. Configure holds the settings the pages above read.
+const sectionGroupOrder = ["Monitor", "Evaluate", "Experiment", "Annotate", "Configure"];
 
 const groupLabels = computed<Record<string, I18nText>>(() => ({
   Monitor: t("aiObservability.sections.monitor"),
   Annotate: t("aiObservability.sections.annotate"),
   Evaluate: t("aiObservability.sections.evaluate"),
   Experiment: t("aiObservability.sections.experiment"),
+  Configure: t("aiObservability.sections.configure"),
 }));
 
 const sectionGroups = computed<SectionHubGroup[]>(() => {

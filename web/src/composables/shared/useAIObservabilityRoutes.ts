@@ -57,11 +57,15 @@ const AIRemoteTaskFormPage = () =>
 const AIRemoteTaskDetailPage = () =>
   import("@/enterprise/views/AIObservability/RemoteTaskDetailPage.vue");
 const AIOnlineEvals = () => import("@/enterprise/components/OnlineEvals.vue");
+// Configure: the AI settings pages, moved here from Settings. Their files and
+// route names stayed put, so every link to them follows without a change.
+const AILlmProvidersPage = () => import("@/components/settings/LlmProvidersSettings.vue");
+const AIAgentMappingPage = () => import("@/components/settings/GenAiAgentMappingSettings.vue");
 // Reused for the AI/LLM session drill-down so it lives under /ai (keeps the
 // AI menu item active) instead of the Traces session-details route.
 const SessionDetails = () => import("@/plugins/traces/SessionDetails.vue");
 
-export type AiObservabilityGroup = "Monitor" | "Annotate" | "Experiment" | "Evaluate";
+export type AiObservabilityGroup = "Monitor" | "Annotate" | "Experiment" | "Evaluate" | "Configure";
 
 /** Rail items that hold several sections as tabs (see `tabOf` below). */
 export type AiObservabilityTabbedItemKey =
@@ -136,6 +140,10 @@ export interface AiObservabilitySection {
   tabQuery?: string;
   /** The rail item this section is a tab of; omitted, it is a rail item of its own. */
   tabOf?: AiObservabilityTabbedItemKey;
+  /** A `/config` flag that must be true for the rail to list this section.
+      Carried over from the Settings rail for the pages that moved from it,
+      which hid them in every edition, OSS included, with the flag off. */
+  requiresConfigFlag?: "online_evals_enabled";
   /** Omitted only for `prompts`, whose routes come from the external,
       already-shared `promptRoutes` table (also consumed directly by
       components that build prompt links) — see the `key === "prompts"`
@@ -367,6 +375,30 @@ export const AI_OBSERVABILITY_SECTIONS: AiObservabilitySection[] = [
     dataTest: "ai-section-tab-score-configs",
     tabQuery: "scoreConfigs",
   },
+  {
+    key: "llmProviders",
+    featureKey: "llmProviders",
+    routeName: "llmProviders",
+    path: "llm-providers",
+    component: AILlmProvidersPage,
+    labelKey: "llmProviders.tabLabel",
+    icon: "smart-toy",
+    group: "Configure",
+    dataTest: "ai-secondary-nav-llm-providers",
+    requiresConfigFlag: "online_evals_enabled",
+  },
+  {
+    key: "agentMapping",
+    featureKey: "genAiAgentMapping",
+    routeName: "genAiAgentMapping",
+    path: "agent-mapping",
+    component: AIAgentMappingPage,
+    labelKey: "settings.genAiAgentMapping.tabLabel",
+    icon: "smart-toy",
+    group: "Configure",
+    dataTest: "ai-secondary-nav-agent-mapping",
+    requiresConfigFlag: "online_evals_enabled",
+  },
 ];
 
 /**
@@ -470,6 +502,8 @@ export const ONLINE_EVAL_FEATURE_KEYS: Partial<Record<FeatureKey, true>> = {
   experiments: true,
   remoteTasks: true,
   evaluations: true,
+  // `/providers`; Agent Mapping's API is registered either way.
+  llmProviders: true,
 };
 
 /**

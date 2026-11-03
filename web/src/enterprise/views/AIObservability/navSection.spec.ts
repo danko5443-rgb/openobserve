@@ -32,6 +32,8 @@ describe("navSection", () => {
     ["aiRemoteTaskCreate", "remoteTasks"],
     ["aiRemoteTaskEdit", "remoteTasks"],
     ["aiRemoteTaskDetail", "remoteTasks"],
+    ["llmProviders", "llmProviders"],
+    ["genAiAgentMapping", "agentMapping"],
   ])("lights %s as %s", (routeName, expected) => {
     expect(navSection(routeName)).toBe(expected);
   });

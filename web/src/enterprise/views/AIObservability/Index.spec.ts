@@ -18,7 +18,7 @@
 // OSS shows the enterprise sections locked (feature-gated routes), enterprise/cloud unlocked.
 // Related sections share one rail item and are told apart by the tab strip above the page.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { nextTick, reactive } from "vue";
 
@@ -149,6 +149,12 @@ const ALL_ITEM_KEYS = [
   "datasets",
 ];
 
+const CONFIGURE_LABEL = "aiObservability.sections.configure";
+const CONFIGURE_KEYS = ["llmProviders", "agentMapping"];
+
+// The first import transforms the shell's whole import graph; pay for it once, outside a test's timeout.
+beforeAll(() => import("./Index.vue"), 30_000);
+
 beforeEach(() => {
   vi.resetModules();
   mockPush.mockClear();
@@ -161,7 +167,8 @@ beforeEach(() => {
 });
 
 describe("AIObservabilityShell — OSS builds (isEnterprise and isCloud both false)", () => {
-  it("still shows every group and every item — nothing is hidden", async () => {
+  // Configure is the exception: Settings listed those pages only with evaluations on, OSS included.
+  it("shows every other group and item — nothing is hidden", async () => {
     const wrapper = await mountShell();
     expect(groupsOf(wrapper).map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
     expect(itemsOf(wrapper).map((i) => i.key)).toEqual(ALL_ITEM_KEYS);
@@ -222,9 +229,9 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     mockIsEnterprise = "true";
     const wrapper = await mountShell();
     const groups = groupsOf(wrapper);
-    expect(groups.map((g) => g.label)).toEqual(ALL_GROUP_LABELS);
+    expect(groups.map((g) => g.label)).toEqual([...ALL_GROUP_LABELS, CONFIGURE_LABEL]);
     expect(groups[0].items.map((i) => i.key)).toEqual(MONITOR_KEYS);
-    expect(itemsOf(wrapper).map((i) => i.key)).toEqual(ALL_ITEM_KEYS);
+    expect(itemsOf(wrapper).map((i) => i.key)).toEqual([...ALL_ITEM_KEYS, ...CONFIGURE_KEYS]);
     expect(itemsOf(wrapper).every((i) => !i.locked)).toBe(true);
   });
 
@@ -232,7 +239,7 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     mockIsCloud = "true";
     const wrapper = await mountShell();
     const groups = groupsOf(wrapper);
-    expect(groups).toHaveLength(4);
+    expect(groups).toHaveLength(5);
     expect(groups[0].items.map((i) => i.key)).toEqual(MONITOR_KEYS);
     expect(itemsOf(wrapper).every((i) => !i.locked)).toBe(true);
   });
@@ -244,6 +251,14 @@ describe("AIObservabilityShell — enterprise/cloud builds with online evaluatio
     const wrapper = await mountShell();
     expect(wrapper.find('[data-test="router-view"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="online-evals-disabled"]').exists()).toBe(false);
+  });
+
+  it("lights the Configure item on its page, kept under its Settings route name", async () => {
+    mockIsEnterprise = "true";
+    mockRoute.name = "genAiAgentMapping";
+    const wrapper = await mountShell();
+    expect(wrapper.findComponent(SectionRailStub).props("activeKey")).toBe("agentMapping");
+    expect(item(wrapper, "agentMapping").to.name).toBe("genAiAgentMapping");
   });
 });
 

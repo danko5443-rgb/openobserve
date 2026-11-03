@@ -67,6 +67,17 @@ const useManagementRoutes = () => {
           path: "alert_sources",
           redirect: (to: any) => ({ name: "alertSources", query: to.query }),
         },
+        // LLM Providers and Agent Mapping moved to AI Observability's Configure
+        // group (/ai/llm-providers, /ai/agent-mapping) under the same route
+        // names. Redirects kept for bookmarks, query included, as above.
+        {
+          path: "llm_providers",
+          redirect: (to: any) => ({ name: "llmProviders", query: to.query }),
+        },
+        {
+          path: "gen_ai_agent_mapping",
+          redirect: (to: any) => ({ name: "genAiAgentMapping", query: to.query }),
+        },
       ],
     },
   ];
@@ -114,11 +125,10 @@ const useManagementRoutes = () => {
     },
   });
 
-  // LLM Model Pricing, LLM Providers, GenAI Agent Mapping (used by the AI
-  // Observability / Online Evals flows), and the enterprise-only operations/
-  // security pages below are all always registered; a direct URL redirects
-  // to the shared locked page (see `withFeatureGate`) when the edition
-  // doesn't unlock them, instead of landing on the real page or a 404.
+  // LLM Model Pricing and the enterprise-only operations/security pages below
+  // are all always registered; a direct URL redirects to the shared locked
+  // page (see `withFeatureGate`) when the edition doesn't unlock them,
+  // instead of landing on the real page or a 404.
   routes[0].children.push({
     path: "model_pricing",
     name: "modelPricing",
@@ -148,27 +158,6 @@ const useManagementRoutes = () => {
     },
     component: () => import("@/components/settings/ModelPricingEditor.vue"),
     beforeEnter: withFeatureGate("modelPricing", routeGuard),
-  });
-  routes[0].children.push({
-    path: "llm_providers",
-    name: "llmProviders",
-    component: () => import("@/components/settings/LlmProvidersSettings.vue"),
-    // `/providers` is unregistered when the server reports `online_evals_enabled: false`.
-    meta: {
-      titleKey: "llmProviders.title",
-      requiresOnlineEvals: true,
-    },
-    beforeEnter: withFeatureGate("llmProviders", routeGuard),
-  });
-  routes[0].children.push({
-    path: "gen_ai_agent_mapping",
-    name: "genAiAgentMapping",
-    component: () => import("@/components/settings/GenAiAgentMappingSettings.vue"),
-    meta: {
-      keepAlive: true,
-      titleKey: "settings.genAiAgentMapping.title",
-    },
-    beforeEnter: withFeatureGate("genAiAgentMapping", routeGuard),
   });
   // Registered in every build; slackRouteGuard and the rail both hide it unless the org config turns Slack on.
   routes[0].children.push({

@@ -26,11 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       />
     </template>
 
-    <!-- A section whose API needs online evaluations, on a server with them off. -->
-    <OnlineEvalsDisabled v-if="onlineEvalsRouteOff" />
     <!-- Form-style sections (general, org params, license, domain): a section
          header above a centered reading column. -->
-    <div v-else-if="isConstrainedSection" class="flex h-full min-h-0 flex-col">
+    <div v-if="isConstrainedSection" class="flex h-full min-h-0 flex-col">
       <OPageHeader
         :title="raw(activeSectionItem?.label || '')"
         :title-data-test="`settings-${activeSectionItem?.key}-page-title`"
@@ -73,8 +71,6 @@ import useIsMetaOrg from "@/composables/useIsMetaOrg";
 import { getImageURL } from "@/utils/zincutils";
 import { checkFeatureAccess, buildFeatureGateContext } from "@/utils/enterpriseFeatures";
 import { isSlackSettingsVisible, readSlackOrgConfig } from "@/utils/slackSettings";
-import { useOnlineEvalsRouteOff } from "@/composables/shared/useOnlineEvalsGate";
-import OnlineEvalsDisabled from "@/components/OnlineEvalsDisabled.vue";
 
 export default defineComponent({
   name: "AppSettings",
@@ -83,7 +79,6 @@ export default defineComponent({
     ConstrainedPage,
     OPageLayout,
     SectionRail,
-    OnlineEvalsDisabled,
   },
   setup() {
     const { t } = useI18nTyped();
@@ -111,7 +106,6 @@ export default defineComponent({
       modelPricing: "model_pricing",
       modelPricingEditor: "model_pricing",
       modelPricingGaps: "model_pricing",
-      llmProviders: "llm_providers",
       storageSettings: "storageSettings",
       cipherKeys: "cipher-keys",
       license: "license",
@@ -119,7 +113,6 @@ export default defineComponent({
       regexPatterns: "regex_patterns",
       syntheticsLocations: "synthetics_locations",
       correlationSettings: "correlation_settings",
-      genAiAgentMapping: "gen_ai_agent_mapping",
       slack: "slack",
     };
 
@@ -142,7 +135,6 @@ export default defineComponent({
       "slack",
     ]);
     const isConstrainedSection = computed(() => CONSTRAINED_SECTIONS.has(activeSection.value));
-    const onlineEvalsRouteOff = useOnlineEvalsRouteOff();
 
     const slackVisible = computed(() => {
       const edition = buildFeatureGateContext(store.state.zoConfig);
@@ -247,8 +239,6 @@ export default defineComponent({
       const storageSettingsAccess = checkFeatureAccess("storageSettings", featureGateCtx);
       const modelPricingAccess = checkFeatureAccess("modelPricing", featureGateCtx);
       const correlationSettingsAccess = checkFeatureAccess("correlationSettings", featureGateCtx);
-      const llmProvidersAccess = checkFeatureAccess("llmProviders", featureGateCtx);
-      const genAiAgentMappingAccess = checkFeatureAccess("genAiAgentMapping", featureGateCtx);
       const queryManagementAccess = checkFeatureAccess("queryManagement", featureGateCtx);
       const nodesAccess = checkFeatureAccess("nodes", featureGateCtx);
       const licenseAccess = checkFeatureAccess("license", featureGateCtx);
@@ -424,30 +414,6 @@ export default defineComponent({
           group: "Data & AI",
         },
         {
-          key: "llm_providers",
-          label: t("llmProviders.tabLabel"),
-          description: t("settings.llmProvidersDesc"),
-          icon: "smart-toy",
-          to: { name: "llmProviders", query: { org_identifier: org } },
-          visible: !!z.online_evals_enabled && llmProvidersAccess.visible,
-          locked: !llmProvidersAccess.allowed,
-          lockedMessage: llmProvidersAccess.message,
-          dataTest: "llm-providers-tab",
-          group: "Data & AI",
-        },
-        {
-          key: "gen_ai_agent_mapping",
-          label: t("settings.genAiAgentMapping.tabLabel"),
-          description: t("settings.index.genAiAgentMappingDesc"),
-          icon: "smart-toy",
-          to: { name: "genAiAgentMapping", query: { org_identifier: org } },
-          visible: !!z.online_evals_enabled && genAiAgentMappingAccess.visible,
-          locked: !genAiAgentMappingAccess.allowed,
-          lockedMessage: genAiAgentMappingAccess.message,
-          dataTest: "gen-ai-agent-mapping-tab",
-          group: "Data & AI",
-        },
-        {
           key: "queryManagement",
           label: t("settings.queryManagement"),
           description: t("settings.queryManagementDesc"),
@@ -554,7 +520,6 @@ export default defineComponent({
       isMetaOrg,
       activeSection,
       isConstrainedSection,
-      onlineEvalsRouteOff,
       activeSectionItem,
       sectionGroups,
       handleSettingsRouting,
