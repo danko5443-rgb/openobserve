@@ -1077,14 +1077,33 @@ describe("SessionsList — search", () => {
     mockSessions.value = [makeSession({ sessionId: "sess-luis", userId: "luis@example.com" })];
     mockTotal.value = 1;
     mockRouteQuery = { type: "stream", keyword: "luis" };
+    // A Back navigation: the history entry knows the page it came back from.
+    window.history.replaceState({ forward: "/ai/session-details" }, "");
+
+    const wrapper = await mountComponent();
+    await wrapper.vm.refresh(1000, 2000, false);
+    await flushPromises();
+    window.history.replaceState(null, "");
+
+    expect(mockFetchPage).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-session-id='sess-luis']").exists()).toBe(true);
+    expect(value(wrapper, SEARCH)).toBe("luis");
+  });
+
+  it("a followed link with the same term fetches: it may name another stream", async () => {
+    mockHasLoadedOnce.value = true;
+    mockLoadedOrg.value = "test-org";
+    mockSearchKeyword.value = "luis";
+    mockSessions.value = [makeSession({ sessionId: "sess-luis", userId: "luis@example.com" })];
+    mockRouteQuery = { type: "stream", keyword: "luis" };
 
     const wrapper = await mountComponent();
     await wrapper.vm.refresh(1000, 2000, false);
     await flushPromises();
 
-    expect(mockFetchPage).not.toHaveBeenCalled();
-    expect(wrapper.find("[data-session-id='sess-luis']").exists()).toBe(true);
-    expect(value(wrapper, SEARCH)).toBe("luis");
+    expect(mockFetchPage).toHaveBeenCalledWith("test-stream", 1000, 2000, 0, 20, "", {
+      keyword: "luis",
+    });
   });
 
   it("shows the filtered empty state, not the first-run screen, and its Clear action re-fetches", async () => {

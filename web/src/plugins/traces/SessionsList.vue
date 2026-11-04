@@ -433,8 +433,10 @@ const SEARCH_INPUT_ID = "sessions-list-search";
 // must reproduce its filtered view. When it differs from what the cached rows
 // were fetched with, the cache guard in `loadSessions` is bypassed once so the
 // mount fetch runs with the URL's term instead of restoring the stale page.
+// A link followed with the same term may name another stream, so only Back
+// (the entry has a `forward`) restores the cached rows.
 let searchChangedByUrl = false;
-if (urlKeyword && urlKeyword !== searchKeyword.value) {
+if (urlKeyword && (urlKeyword !== searchKeyword.value || !window.history.state?.forward)) {
   searchKeyword.value = urlKeyword;
   searchChangedByUrl = true;
 }

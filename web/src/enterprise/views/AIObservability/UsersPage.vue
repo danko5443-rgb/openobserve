@@ -272,6 +272,7 @@ function openSessions(user: string) {
     name: "aiSessions",
     query: {
       org_identifier: store.state.selectedOrganization?.identifier,
+      type: "stream",
       stream: stream.value,
       keyword: user,
     },
