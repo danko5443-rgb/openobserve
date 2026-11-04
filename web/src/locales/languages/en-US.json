@@ -29501,7 +29501,9 @@
     "tile": {
       "unpricedTokens": "{tokens} tokens unpriced",
       "unpricedTooltip": "Cost is a lower bound: {tokens} tokens on {models} have no price. Open the Unpriced tab in LLM Model Pricing.",
-      "pricedSinceTooltip": "Cost is a lower bound: {tokens} tokens on {models} were recorded before a price was added and keep no cost."
+      "pricedSinceTooltip": "Cost is a lower bound: {tokens} tokens on {models} were recorded before a price was added and keep no cost.",
+      "unpricedWindow": "{tokens} unpriced in this time range",
+      "unpricedWindowTooltip": "{tokens} tokens on {models} have no price in this time range. This count ignores the filters, so the filtered cost may or may not include them. Open the Unpriced tab in LLM Model Pricing."
     },
     "chart": {
       "costMissing": "Not in this chart: {models}. {tokens} tokens have no price.",

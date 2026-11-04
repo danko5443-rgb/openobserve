@@ -907,6 +907,20 @@ describe("LLMInsightsDashboard — Total Cost tile", () => {
     expect(text).toContain("1.50");
   });
 
+  it("under a filter, shows the recorded cost, not the whole window's unpriced count", async () => {
+    mockRouteQuery.feature = "reply-draft";
+    const text = await costTileText(0.05, 463_000, 1_500_000);
+    expect(text).not.toContain("llmDataTrust.cost.unknown");
+    expect(text).not.toContain("≥");
+    expect(text).toContain("0.05");
+  });
+
+  it("under a filter, still reads 'cost unknown' when nothing was priced", async () => {
+    mockRouteQuery.feature = "reply-draft";
+    const text = await costTileText(0, 463_000, 1_500_000);
+    expect(text).toContain("llmDataTrust.cost.unknown");
+  });
+
   it("reads the server's uncapped unpriced tokens, not the sum of the listed models", async () => {
     mockKpi.value = {
       ...mockKpi.value,

@@ -1443,8 +1443,15 @@ const kpiCards = computed<KpiCard[]>(() => {
   // data health check finds unpriced tokens the tile reads as a lower bound
   // ("≥ $X"), or "cost unknown" when none of the window's tokens were priced,
   // with the token count under it.
+  // The check reads the whole window, not the filters, so under a filter a
+  // recorded cost is shown as it is and the count is labelled as the window's.
   const u = unpriced.value;
-  const kind = costKind(kpi.value.totalCost, kpi.value.totalTokens, u?.tokens ?? 0);
+  const windowOnly = hasActiveFilters.value && kpi.value.totalCost > 0;
+  const kind = costKind(
+    kpi.value.totalCost,
+    kpi.value.totalTokens,
+    windowOnly ? 0 : (u?.tokens ?? 0),
+  );
   const costCard: KpiCard = {
     label: t("traces.lLMInsightsDashboard.totalCost"),
     icon: "payments",
@@ -1454,11 +1461,16 @@ const kpiCards = computed<KpiCard[]>(() => {
     ...(kind === "partial" ? { prefix: "≥" } : {}),
     ...(u
       ? {
-          note: t("llmDataTrust.tile.unpricedTokens", { tokens: formatTokens(u.tokens) }),
+          note: t(
+            windowOnly ? "llmDataTrust.tile.unpricedWindow" : "llmDataTrust.tile.unpricedTokens",
+            { tokens: formatTokens(u.tokens) },
+          ),
           noteTooltip: t(
-            u.pricedSince
-              ? "llmDataTrust.tile.pricedSinceTooltip"
-              : "llmDataTrust.tile.unpricedTooltip",
+            windowOnly
+              ? "llmDataTrust.tile.unpricedWindowTooltip"
+              : u.pricedSince
+                ? "llmDataTrust.tile.pricedSinceTooltip"
+                : "llmDataTrust.tile.unpricedTooltip",
             { tokens: formatTokens(u.tokens), models: unpricedModelNames.value },
           ),
           noteTone: "warning" as const,
