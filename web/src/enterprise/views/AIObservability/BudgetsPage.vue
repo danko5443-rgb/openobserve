@@ -16,9 +16,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 <!--
   Budgets (AIO-38) — spend limits per agent, feature, user, model or session,
-  as alerts: a warning at 80% and an over-budget alert at 100% whose webhook is
-  the signal a gateway enforces. Spent against limit is read live from the
-  trace cost columns. Unpriced spend is named, never counted as $0.
+  each one alert: warning at 80% and critical at 100%, both to one destination
+  whose webhook is the signal a gateway enforces on critical. Spent against
+  limit is read live from the trace cost columns. Unpriced spend is named,
+  never counted as $0.
 -->
 <template>
   <AiPageShell
@@ -181,21 +182,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           />
         </div>
         <OSelect
-          v-model="warnDestination"
+          v-model="destination"
           :options="destinationOptions"
-          :label="t('aiBudgets.warnAt')"
+          :label="t('aiBudgets.destination')"
+          :help-text="t('aiBudgets.destinationHelp')"
           :placeholder="t('aiAlertPack.noDestination')"
           clearable
-          data-test="ai-budgets-warn-destination"
-        />
-        <OSelect
-          v-model="signalDestination"
-          :options="destinationOptions"
-          :label="t('aiBudgets.overAt')"
-          :help-text="t('aiBudgets.signalHelp')"
-          :placeholder="t('aiAlertPack.noDestination')"
-          clearable
-          data-test="ai-budgets-signal-destination"
+          data-test="ai-budgets-destination"
         />
       </div>
     </ODialog>
@@ -228,13 +221,14 @@ import { useLLMStreamQuery } from "@/plugins/traces/composables/useLLMStreamQuer
 import { pricingGapsRoute } from "@/plugins/traces/llmDataTrust.utils";
 import {
   PERIOD_MINUTES,
-  budgetAlertPayloads,
+  budgetAlertPayload,
   budgetFromAlert,
   budgetSpend,
   budgetSql,
   budgetState,
   isEach,
   type BudgetDef,
+  type BudgetRow,
   type BudgetScope,
   type BudgetState,
 } from "@/utils/alerts/aiBudgets";
@@ -267,8 +261,7 @@ const unpricedTraces = ref(0);
 const dialogOpen = ref(false);
 const creating = ref(false);
 const destinations = ref<string[]>([]);
-const warnDestination = ref<string | null>(null);
-const signalDestination = ref<string | null>(null);
+const destination = ref<string | null>(null);
 const draft = reactive<BudgetDef>({
   name: "",
   scope: "agent",
@@ -348,25 +341,24 @@ async function reload() {
       ? ((await alertsService.listByFolderId(1, 500, "name", false, "", org(), id)).data?.list ??
         [])
       : [];
-    const overAlerts = list.filter((a: any) => String(a.name).endsWith("_over"));
     const defs = (
       await Promise.all(
-        overAlerts.map((a: any) =>
+        list.map((a: { alert_id?: string; id?: string }) =>
           alertsService
             .get_by_alert_id(org(), a.alert_id ?? a.id, id)
             .then((r) => budgetFromAlert(r.data))
             .catch(() => null),
         ),
       )
-    ).filter((d): d is BudgetDef & { alertIds: string[] } => !!d);
+    ).filter((d): d is BudgetDef => !!d);
     const now = Date.now() * 1000;
     rows.value = await Promise.all(
       defs.map(async (b) => {
         const hits = (await executeQuery(
-          budgetSql(b),
+          budgetSql(b, 100),
           now - PERIOD_MINUTES[b.period] * 60_000_000,
           now,
-        ).catch(() => [])) as any[];
+        ).catch(() => [])) as BudgetRow[];
         const s = budgetSpend(b, hits);
         const shown = isEach(b.scope) ? s.largest : s.spent;
         return {
@@ -433,15 +425,16 @@ async function create() {
       period: draft.scope === "session" ? "hour" : draft.period,
       stream: stream.value,
     };
-    for (const payload of budgetAlertPayloads(b, {
-      folderId: id,
-      warnDestination: warnDestination.value ?? "",
-      signalDestination: signalDestination.value ?? "",
-      owner: store.state.userInfo?.email ?? "",
-      timezone: store.state.timezone || "UTC",
-    })) {
-      await alertsService.create_by_alert_id(org(), payload, id);
-    }
+    await alertsService.create_by_alert_id(
+      org(),
+      budgetAlertPayload(b, {
+        folderId: id,
+        destination: destination.value ?? "",
+        owner: store.state.userInfo?.email ?? "",
+        timezone: store.state.timezone || "UTC",
+      }),
+      id,
+    );
     toast({ variant: "success", message: t("aiBudgets.created", { name: b.name }) });
     dialogOpen.value = false;
     await reload();

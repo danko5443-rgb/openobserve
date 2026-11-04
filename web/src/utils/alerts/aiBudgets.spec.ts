@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  budgetAlertPayloads,
+  budgetAlertPayload,
   budgetFromAlert,
   budgetSpend,
   budgetSql,
@@ -33,38 +33,35 @@ const feature: BudgetDef = {
 };
 
 describe("budgets (AIO-38)", () => {
-  it("limits one feature's spend, and each user's or session's separately", () => {
-    expect(budgetSql(feature, 0.8)).toBe(
-      "SELECT SUM(gen_ai_usage_cost) AS spent FROM \"default\" WHERE feature_name = 'deep-research' HAVING SUM(gen_ai_usage_cost) >= 320",
+  it("groups spend by the scope's column, unaliased, so the SQL multi-alert accepts it", () => {
+    expect(budgetSql(feature)).toBe(
+      "SELECT feature_name, SUM(gen_ai_usage_cost) AS spent FROM \"default\" WHERE feature_name = 'deep-research' GROUP BY feature_name ORDER BY spent DESC",
     );
-    const perSession = budgetSql(
-      { ...feature, scope: "session", value: "", limitUsd: 50, period: "hour" },
-      1,
-    );
+    const perSession = budgetSql({ ...feature, scope: "session", value: "", period: "hour" }, 100);
     expect(perSession).toContain(
-      "GROUP BY gen_ai_conversation_id HAVING SUM(gen_ai_usage_cost) >= 50",
+      "WHERE gen_ai_conversation_id IS NOT NULL AND gen_ai_conversation_id != '' GROUP BY gen_ai_conversation_id ORDER BY spent DESC LIMIT 100",
     );
   });
 
-  it("makes a warning at 80% and a budget signal at 100%, readable back", () => {
-    const [warn, over] = budgetAlertPayloads(feature, {
+  it("is one alert, warning at 80% and critical at 100% of each key's spend, readable back", () => {
+    const alert = budgetAlertPayload(feature, {
       folderId: "f",
-      warnDestination: "slack",
-      signalDestination: "litellm-hook",
+      destination: "litellm-hook",
       owner: "me",
       timezone: "UTC",
-    }) as any[];
-    expect(warn.name).toBe("deep-research-daily_warn");
-    expect(over.destinations).toEqual(["litellm-hook"]);
-    expect(over.trigger_condition.period).toBe(1440);
-    expect(over.tags).toEqual(["pack:ai-budgets"]);
-    expect(budgetFromAlert({ ...over, alert_id: "a1" })).toMatchObject({
-      name: "deep-research-daily",
-      scope: "feature",
-      limitUsd: 400,
-      alertIds: ["a1"],
     });
-    expect(budgetFromAlert(warn)).toBeNull();
+    expect(alert.name).toBe("deep-research-daily");
+    expect(alert.destinations).toEqual(["litellm-hook"]);
+    expect(alert.query_condition.sql).not.toContain("HAVING");
+    expect(alert.query_condition.aggregation).toMatchObject({
+      having: { column: "spent", operator: ">=", value: 400 },
+      warning_value: 320,
+      multi_alert: true,
+    });
+    expect(alert.trigger_condition).toMatchObject({ operator: ">=", threshold: 1, period: 1440 });
+    expect(alert.tags).toEqual(["pack:ai-budgets"]);
+    expect(budgetFromAlert(alert)).toEqual(feature);
+    expect(budgetFromAlert({ stream_name: "default", context_attributes: {} })).toBeNull();
   });
 
   it("states under, warning and over, and counts each-scope keys over", () => {

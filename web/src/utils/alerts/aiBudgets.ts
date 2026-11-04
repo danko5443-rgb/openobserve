@@ -14,10 +14,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Cost budgets (AIO-38), on the alert engine: a budget is two alerts on the
- * trace stream's cost columns — one at 80% (notify), one at 100% (over). The
- * 100% alert's destination is the budget signal: a webhook the team's gateway
- * acts on to stop the calls. OpenObserve stays out of the request path (D1).
+ * Cost budgets (AIO-38), on the alert engine: a budget is one SQL multi-alert
+ * on the trace stream's cost columns, one group per budget key. Each group's
+ * `spent` is classified warning at 80% and critical at 100% of the limit. Both
+ * levels go to the alert's destinations; a gateway webhook tells them apart by
+ * the payload's alert level and stops the calls on critical. OpenObserve stays
+ * out of the request path (D1).
  *
  * Periods are rolling windows the alert evaluates (the last day, the last 30
  * days, or the last hour for a session's burn rate), not calendar boundaries.
@@ -62,45 +64,54 @@ export const PERIOD_MINUTES: Record<BudgetPeriod, number> = {
 
 const quote = (v: string) => `'${v.replace(/'/g, "''")}'`;
 
-/** Spend in the period (per key for each-scopes); `ratio` adds the HAVING for an alert. */
-export function budgetSql(b: BudgetDef, ratio?: number): string {
+/** Ratio of the limit at which a budget turns warning; critical is the limit itself. */
+export const WARN_RATIO = 0.8;
+
+/**
+ * Spend in the period, one row per key (`spent`, grouped on the scope's column). The column stays
+ * unaliased: a SQL multi-alert requires every GROUP BY field projected under its own name. Worst
+ * first, so the alert's bounded page holds the most-over keys.
+ */
+export function budgetSql(b: BudgetDef, limit?: number): string {
   const col = BUDGET_COLUMNS[b.scope];
   const filter = isEach(b.scope)
     ? `${col} IS NOT NULL AND ${col} != ''`
     : `${col} = ${quote(b.value)}`;
-  const having =
-    ratio !== undefined
-      ? ` HAVING SUM(gen_ai_usage_cost) >= ${+(b.limitUsd * ratio).toFixed(4)}`
-      : "";
-  return isEach(b.scope)
-    ? `SELECT ${col} AS budget_key, SUM(gen_ai_usage_cost) AS spent FROM "${b.stream}" ` +
-        `WHERE ${filter} GROUP BY ${col}${having}${ratio === undefined ? " ORDER BY spent DESC LIMIT 100" : ""}`
-    : `SELECT SUM(gen_ai_usage_cost) AS spent FROM "${b.stream}" WHERE ${filter}${having}`;
+  return (
+    `SELECT ${col}, SUM(gen_ai_usage_cost) AS spent FROM "${b.stream}" ` +
+    `WHERE ${filter} GROUP BY ${col} ORDER BY spent DESC${limit ? ` LIMIT ${limit}` : ""}`
+  );
 }
 
-/** The two alerts of a budget, tagged so the Budgets page finds them. */
-export function budgetAlertPayloads(
+/** The budget's alert, tagged so the Budgets page finds it. */
+export function budgetAlertPayload(
   b: BudgetDef,
   opts: {
     folderId: string;
-    warnDestination: string;
-    signalDestination: string;
+    destination: string;
     owner: string;
     timezone: string;
   },
-): Record<string, unknown>[] {
-  const base = (ratio: number, destination: string, severity: "warning" | "critical") => ({
-    name: `${b.name}_${ratio === 1 ? "over" : "warn"}`.replace(/[^A-Za-z0-9_-]+/g, "_"),
+) {
+  return {
+    name: b.name.replace(/[^A-Za-z0-9_-]+/g, "_"),
     stream_type: "traces",
     stream_name: b.stream,
     is_real_time: false,
     enabled: true,
-    destinations: destination ? [destination] : [],
+    destinations: opts.destination ? [opts.destination] : [],
     query_condition: {
       type: "sql",
-      sql: budgetSql(b, ratio),
+      sql: budgetSql(b),
       conditions: null,
-      aggregation: null,
+      // SQL multi-alert: the backend derives group_by from the SQL; function is fixed.
+      aggregation: {
+        group_by: [],
+        function: "count",
+        having: { column: "spent", operator: ">=", value: b.limitUsd, ignore_case: false },
+        warning_value: +(b.limitUsd * WARN_RATIO).toFixed(4),
+        multi_alert: true,
+      },
       promql: null,
       promql_condition: null,
       vrl_function: null,
@@ -108,6 +119,7 @@ export function budgetAlertPayloads(
     },
     trigger_condition: {
       period: PERIOD_MINUTES[b.period],
+      // A multi-alert's count gate is "any group".
       operator: ">=",
       threshold: 1,
       frequency: b.period === "hour" ? 5 : 15,
@@ -125,25 +137,33 @@ export function budgetAlertPayloads(
       budget_value: b.value,
       budget_limit_usd: String(b.limitUsd),
       budget_period: b.period,
-      budget_threshold: ratio === 1 ? "100" : "80",
     },
-    priority: SEVERITY_TO_PRIORITY[severity],
-  });
-  return [base(0.8, opts.warnDestination, "warning"), base(1, opts.signalDestination, "critical")];
+    priority: SEVERITY_TO_PRIORITY.critical,
+  };
 }
 
-/** A budget read back from its alert (the 100% one carries the full definition). */
-export function budgetFromAlert(alert: any): (BudgetDef & { alertIds: string[] }) | null {
+/** The fields of a stored alert a budget is read back from. */
+export interface BudgetAlert {
+  stream_name?: string;
+  context_attributes?: Record<string, string> | null;
+}
+
+const isScope = (v: unknown): v is BudgetScope =>
+  typeof v === "string" && Object.hasOwn(BUDGET_COLUMNS, v);
+const isPeriod = (v: unknown): v is BudgetPeriod =>
+  typeof v === "string" && Object.hasOwn(PERIOD_MINUTES, v);
+
+/** A budget read back from its alert; null for any other alert in the folder. */
+export function budgetFromAlert(alert: BudgetAlert | null | undefined): BudgetDef | null {
   const c = alert?.context_attributes ?? {};
-  if (!c.budget_name || c.budget_threshold !== "100") return null;
+  if (!c.budget_name || !isScope(c.budget_scope) || !isPeriod(c.budget_period)) return null;
   return {
     name: c.budget_name,
     scope: c.budget_scope,
     value: c.budget_value ?? "",
     limitUsd: Number(c.budget_limit_usd) || 0,
     period: c.budget_period,
-    stream: alert.stream_name,
-    alertIds: [alert.alert_id ?? alert.id].filter(Boolean),
+    stream: alert?.stream_name ?? "",
   };
 }
 
@@ -152,13 +172,18 @@ export type BudgetState = "under" | "warning" | "over";
 export function budgetState(spent: number, limit: number): BudgetState {
   if (limit <= 0) return "under";
   if (spent >= limit) return "over";
-  return spent >= 0.8 * limit ? "warning" : "under";
+  return spent >= WARN_RATIO * limit ? "warning" : "under";
+}
+
+/** One row of {@link budgetSql}. */
+export interface BudgetRow {
+  spent?: unknown;
 }
 
 /** Spend of a budget from its rows: the total, or the largest key and how many keys are over. */
 export function budgetSpend(
   b: BudgetDef,
-  rows: any[],
+  rows: readonly BudgetRow[],
 ): { spent: number; over: number; largest: number; keys: number } {
   if (!isEach(b.scope)) {
     const spent = Number(rows[0]?.spent) || 0;

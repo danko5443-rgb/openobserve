@@ -29051,7 +29051,7 @@
     "state": "State",
     "states": { "under": "Under", "warning": "Warning", "over": "Over | {n} over | {n} over" },
     "empty": "No budgets yet. A budget warns at 80% and signals at 100%.",
-    "signalNote": "The 100% alert is the budget signal: point it at your gateway's webhook (LiteLLM, Portkey). OpenObserve never blocks a call.",
+    "signalNote": "A budget is one alert: warning at 80%, critical at 100%. Point it at your gateway's webhook (LiteLLM, Portkey) and stop calls on critical. OpenObserve never blocks a call.",
     "unpriced": "{n} calls have no price this month. They are not counted in any budget.",
     "name": "Name",
     "limits": "What it limits",
@@ -29069,11 +29069,10 @@
     "valueScope": "{scope} = {value} · per {period}",
     "spentOf": "{spent} / {limit} · {pct}%",
     "spentEach": "{limit} each · {over} of {keys} over · largest {largest}",
-    "warnAt": "At 80%, notify",
-    "overAt": "At 100%, budget signal",
-    "signalHelp": "A webhook destination your gateway acts on to stop the calls.",
-    "folderDescription": "Budget alerts (80% and 100%)",
-    "created": "Created budget {name}: two alerts in AI budgets"
+    "destination": "Destination",
+    "destinationHelp": "Gets both levels: warning at 80%, critical at 100%. A gateway webhook stops the calls on critical.",
+    "folderDescription": "Budget alerts (warning at 80%, critical at 100%)",
+    "created": "Created budget {name}: one alert in AI budgets"
   },
   "releaseWatch": {
     "title": "Release watch · {agent} {version}",
