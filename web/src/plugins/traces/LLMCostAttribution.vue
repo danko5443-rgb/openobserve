@@ -18,7 +18,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   LLMCostAttribution — "Cost by tenant / feature / user" on Insights (AIO-27).
   One row per value with cost, share, tokens and traces for the page's scope
   and window; spans with no value land in an Unattributed row so the shares add
-  up. A row click filters the page to that value. A stream that never received
+  up. A segmented bar above the table shows each row's share of spend in the
+  row's dot colour. A row click filters the page to that value. A stream that never received
   the attribute shows how to set it instead of an error.
 -->
 <template>
@@ -61,33 +62,46 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         snippet
       }}</code>
     </div>
-    <OTable
-      v-else
-      :data="tableRows"
-      :columns="columns"
-      row-key="key"
-      :loading="loading"
-      :show-global-filter="false"
-      :fill-height="false"
-      pagination="none"
-      :empty-message="failed ? t('llmAttribution.loadFailed') : t('llmAttribution.empty')"
-      data-test="llm-cost-attribution-table"
-      @row-click="onRowClick"
-    >
-      <template #cell-value="{ row }">
-        <span :class="row.kind === 'value' ? 'text-text-body' : 'text-text-secondary italic'">
-          {{ row.label }}
-        </span>
-      </template>
-      <template #cell-cost="{ row }">{{ `$${row.cost.toFixed(2)}` }}</template>
-      <template #cell-share="{ row }">
-        <div class="flex items-center gap-2">
-          <OProgressBar :value="row.share * 100" size="sm" class="w-20" aria-hidden="true" />
-          <span class="text-2xs text-text-secondary">{{ (row.share * 100).toFixed(0) }}%</span>
-        </div>
-      </template>
-      <template #cell-tokens="{ row }">{{ formatTokens(row.tokens) }}</template>
-    </OTable>
+    <template v-else>
+      <!-- Part-to-whole; the table below is its legend. Unattributed is the empty track. -->
+      <div v-if="segments.length" class="px-3 pt-3 pb-1" data-test="llm-cost-attribution-bar">
+        <OSegmentedBar :segments="segments" size="md" :label="summary || undefined" />
+      </div>
+      <OTable
+        :data="tableRows"
+        :columns="columns"
+        row-key="key"
+        :loading="loading"
+        :show-global-filter="false"
+        :fill-height="false"
+        pagination="none"
+        :empty-message="failed ? t('llmAttribution.loadFailed') : t('llmAttribution.empty')"
+        data-test="llm-cost-attribution-table"
+        @row-click="onRowClick"
+      >
+        <template #cell-value="{ row }">
+          <span class="flex min-w-0 items-center gap-2">
+            <span
+              class="rounded-default size-2 shrink-0"
+              :class="swatchClass(row)"
+              :style="row.kind === 'value' ? seriesSwatch(seriesSlot(row.value)) : undefined"
+              aria-hidden="true"
+            />
+            <span
+              class="truncate"
+              :class="row.kind === 'value' ? 'text-text-body' : 'text-text-secondary italic'"
+            >
+              {{ row.label }}
+            </span>
+          </span>
+        </template>
+        <template #cell-cost="{ row }">{{ `$${row.cost.toFixed(2)}` }}</template>
+        <template #cell-share="{ row }">
+          <span class="text-text-secondary">{{ `${(row.share * 100).toFixed(0)}%` }}</span>
+        </template>
+        <template #cell-tokens="{ row }">{{ formatTokens(row.tokens) }}</template>
+      </OTable>
+    </template>
   </LLMPanelCard>
 </template>
 
@@ -99,12 +113,21 @@ import { useStore } from "vuex";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OTable from "@/lib/core/Table/OTable.vue";
 import { COL, type OTableColumnDef } from "@/lib/core/Table/OTable.types";
-import OProgressBar from "@/lib/data/ProgressBar/OProgressBar.vue";
+import OSegmentedBar from "@/lib/data/SegmentedBar/OSegmentedBar.vue";
+import {
+  SEGMENT_SWATCH,
+  seriesSwatch,
+  type SegmentedBarSegment,
+} from "@/lib/data/SegmentedBar/OSegmentedBar.types";
 import OToggleGroup from "@/lib/core/ToggleGroup/OToggleGroup.vue";
 import OToggleGroupItem from "@/lib/core/ToggleGroup/OToggleGroupItem.vue";
 import LLMPanelCard from "./LLMPanelCard.vue";
 import useStreams from "@/composables/useStreams";
 import { formatTokens } from "@/utils/llmUtils";
+import {
+  classicColorPaletteLightTheme,
+  getDistinctSeriesColors,
+} from "@/utils/dashboard/colorPalette";
 import { useLLMStreamQuery } from "./composables/useLLMStreamQuery";
 import {
   ATTRIBUTION_ATTRIBUTES,
@@ -187,6 +210,34 @@ const tableRows = computed<Row[]>(() => {
       : []),
   ];
 });
+
+// Colour follows the value, not its rank (the dashboards' name hash), so a
+// tenant keeps its colour across windows and filters.
+const seriesSlot = computed(() => {
+  const colors = getDistinctSeriesColors(
+    result.value.rows.map((r) => r.value),
+    classicColorPaletteLightTheme,
+  );
+  return (value: string) => classicColorPaletteLightTheme.indexOf(colors.get(value) ?? "") + 1;
+});
+// "N more" is the muted grey; Unattributed is the bar's empty track, so its dot is the track colour.
+const swatchClass = (row: Row) =>
+  row.kind === "more"
+    ? SEGMENT_SWATCH.muted
+    : row.kind === "none"
+      ? "bg-border-default"
+      : undefined;
+const segments = computed<SegmentedBarSegment[]>(() =>
+  tableRows.value
+    .filter((r) => r.kind !== "none" && r.share > 0)
+    .map((r) => ({
+      id: r.key,
+      pct: r.share * 100,
+      ...(r.kind === "value"
+        ? { series: seriesSlot.value(r.value) }
+        : { variant: "muted" as const }),
+    })),
+);
 
 const summary = computed(() =>
   hits.value.length
