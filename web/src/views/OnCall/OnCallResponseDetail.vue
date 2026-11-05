@@ -592,6 +592,12 @@
 
     <OnCallResponseDetailSkeleton v-else-if="loading" />
 
+    <LicenseDeniedState
+      v-else-if="licenseDenied"
+      :features="licenseDenied"
+      data-test="oncall-response-detail-license-denied"
+    />
+
     <OContent v-else-if="loadError !== null" y>
       <OEmptyState
         size="hero"
@@ -813,6 +819,7 @@ import ORefreshButton from "@/lib/core/RefreshButton/ORefreshButton.vue";
 import OEmptyState from "@/lib/core/EmptyState/OEmptyState.vue";
 import OPageLayout from "@/lib/core/PageLayout/OPageLayout.vue";
 
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import OnCallAboutPage from "@/components/oncall/OnCallAboutPage.vue";
 import OnCallDeliveryLedger from "@/components/oncall/OnCallDeliveryLedger.vue";
 import OnCallEscalationCell from "@/components/oncall/OnCallEscalationCell.vue";
@@ -903,6 +910,7 @@ import type {
 } from "@/ts/interfaces/oncall";
 import type { I18nText } from "@/types/i18n";
 import { raw, useI18nTyped } from "@/types/i18n";
+import { licenseDeniedFeatures } from "@/utils/featureGate";
 import { useOnCallClock } from "@/composables/useOnCallClock";
 import {
   DEFAULT_ACTIVITY_KINDS,
@@ -943,6 +951,7 @@ const teamDeleted = computed(() => isDeletedTeam(response.value?.team_id, knownT
 const loading = ref(false);
 /// Set only when a load fails with nothing on screen; a 404 leaves it null and reads as not found.
 const loadError = ref<string | null>(null);
+const licenseDenied = ref<string[] | null>(null);
 const resolving = ref(false);
 const confirmRecoveryOpen = ref(false);
 const confirmingRecovery = ref(false);
@@ -1356,7 +1365,19 @@ async function read<T>(
       refetchType: "none",
     });
   }
-  return queryClient.fetchQuery(options as any) as Promise<T>;
+  try {
+    return (await queryClient.fetchQuery(options as any)) as T;
+  } catch (err) {
+    // Any read can carry it, because the others may be answered from cache; the callers still see the error.
+    const denied = licenseDeniedFeatures(err);
+    if (denied) {
+      licenseDenied.value = denied;
+      // Clearing these takes off the record's actions and the progress rechecks; the server would refuse each one.
+      response.value = null;
+      escalation.value = null;
+    }
+    throw err;
+  }
 }
 
 // The newest read: a slower record for an id the route has already left must not overwrite the current one.
@@ -1366,13 +1387,14 @@ let latestResponseRead = 0;
 async function fetchResponse(force = false) {
   loading.value = true;
   loadError.value = null;
+  licenseDenied.value = null;
   const readId = ++latestResponseRead;
   try {
     const data = await read<{
       response: OnCallResponse;
       events: OnCallResponseEvent[];
     } | null>(responseQuery(orgId.value, responseId.value), force);
-    if (readId !== latestResponseRead) return;
+    if (readId !== latestResponseRead || licenseDenied.value) return;
     response.value = data?.response ?? null;
     events.value = data?.events ?? [];
     lastFetchedAt.value =
@@ -1391,10 +1413,10 @@ async function fetchResponse(force = false) {
       fetchTeamContext,
     ]) {
       await step();
-      if (readId !== latestResponseRead) return;
+      if (readId !== latestResponseRead || licenseDenied.value) return;
     }
   } catch (err: any) {
-    if (readId !== latestResponseRead) return;
+    if (readId !== latestResponseRead || licenseDenied.value) return;
     if (!response.value) {
       if (err?.response?.status !== 404) {
         loadError.value = String(err?.response?.data?.message ?? err?.message ?? "");
@@ -1877,11 +1899,11 @@ async function refreshRecord() {
       responseQuery(orgId.value, id),
       true,
     );
-    if (!data?.response || id !== responseId.value) return;
+    if (!data?.response || id !== responseId.value || licenseDenied.value) return;
     response.value = data.response;
     events.value = data.events ?? [];
   } catch (err: any) {
-    if (id !== responseId.value) return;
+    if (id !== responseId.value || licenseDenied.value) return;
     toast({
       variant: "error",
       message: raw(err?.response?.data?.message) || t("oncall.loadResponseFailed"),

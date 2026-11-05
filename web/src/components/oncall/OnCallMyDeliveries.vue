@@ -58,8 +58,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       </span>
     </div>
 
+    <LicenseDeniedState
+      v-if="licenseDenied"
+      :features="licenseDenied"
+      data-test="oncall-my-deliveries-license-denied"
+    />
+
     <OEmptyState
-      v-if="loadError !== null"
+      v-else-if="loadError !== null"
       size="inline"
       variant="error"
       :title="t('oncall.myDeliveriesLoadFailed')"
@@ -163,6 +169,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "vuex";
 
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import OTag from "@/lib/core/Badge/OTag.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OEmptyState from "@/lib/core/EmptyState/OEmptyState.vue";
@@ -180,6 +187,7 @@ import { useListViewState } from "@/composables/useListViewState";
 import { markDeliveriesReadMutation, myDeliveriesQuery } from "@/services/oncall.queries";
 import type { MyDeliveries, MyDelivery } from "@/ts/interfaces/oncall";
 import { raw, useI18nTyped } from "@/types/i18n";
+import { licenseDeniedFeatures } from "@/utils/featureGate";
 
 const props = withDefaults(
   defineProps<{
@@ -189,7 +197,7 @@ const props = withDefaults(
   { teamNames: () => ({}) },
 );
 
-const emit = defineEmits<{ unread: [count: number] }>();
+const emit = defineEmits<{ unread: [count: number]; licenseDenied: [features: string[]] }>();
 
 const { t } = useI18nTyped();
 const store = useStore();
@@ -279,6 +287,7 @@ let latestDeliveriesRead = 0;
 let loadedOnce = false;
 /// Set only when the first load fails, so "nothing was sent" is never said for a read that did not happen.
 const loadError = ref<string | null>(null);
+const licenseDenied = ref<string[] | null>(null);
 
 async function fetchDeliveries(force = false) {
   loading.value = true;
@@ -294,10 +303,12 @@ async function fetchDeliveries(force = false) {
     setUnread(data?.unread ?? 0);
     loadedOnce = true;
     loadError.value = null;
+    licenseDenied.value = null;
   } catch (err: any) {
     if (readId !== latestDeliveriesRead) return;
+    const denied = licenseDeniedFeatures(err);
     // A failed refresh keeps the inbox on screen rather than emptying it and zeroing the badge.
-    if (loadedOnce) {
+    if (loadedOnce && !denied) {
       toast({
         variant: "error",
         message: raw(err?.response?.data?.message) || t("oncall.refreshFailed"),
@@ -306,7 +317,10 @@ async function fetchDeliveries(force = false) {
     }
     rows.value = [];
     setUnread(0);
-    loadError.value = String(err?.response?.data?.message ?? err?.message ?? "");
+    licenseDenied.value = denied;
+    // The page owns the whole-body lock: a teams read answered from cache would not tell it.
+    if (denied) emit("licenseDenied", denied);
+    else loadError.value = String(err?.response?.data?.message ?? err?.message ?? "");
   } finally {
     if (readId === latestDeliveriesRead) loading.value = false;
   }

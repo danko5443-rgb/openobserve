@@ -16,6 +16,7 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import i18n from "@/locales";
 import { queryClient } from "@/composables/query/queryClient";
 import alertsService from "@/services/alerts";
@@ -50,6 +51,7 @@ vi.mock("@/services/oncall", () => ({
     getPolicy: vi.fn(),
     teamReachability: vi.fn(),
     resolvedSchedule: vi.fn(),
+    responseReport: vi.fn(),
     escalateNow: vi.fn(),
   },
 }));
@@ -2078,6 +2080,147 @@ describe("OnCallResponseDetail — responding", () => {
 
       expect(wrapper.find('[data-test="oncall-response-detail-error"]').exists()).toBe(false);
       expect(wrapper.find('[data-test="oncall-response-stats"]').exists()).toBe(true);
+    });
+
+    describe("a license denial", () => {
+      const DENIAL = {
+        response: {
+          status: 403,
+          data: {
+            code: 40001,
+            message: "Features not included in your license: oncall",
+            error_detail: "oncall",
+          },
+        },
+      };
+
+      function expectLocked(wrapper: ReturnType<typeof render>) {
+        const lock = wrapper.findComponent(LicenseDeniedState);
+        expect(lock.props("features")).toEqual(["oncall"]);
+        expect(lock.attributes("data-test")).toBe("oncall-response-detail-license-denied");
+        for (const gone of [
+          "oncall-response-detail-error",
+          "oncall-response-detail-not-found",
+          "oncall-response-stats",
+          "oncall-response-refresh",
+        ]) {
+          expect(wrapper.find(`[data-test="${gone}"]`).exists()).toBe(false);
+        }
+      }
+
+      it("replaces the body when the first load is denied", async () => {
+        service.getResponse.mockRejectedValueOnce(DENIAL);
+        const wrapper = render();
+        await flushPromises();
+
+        expectLocked(wrapper);
+      });
+
+      it("replaces a loaded page, with no error toast, when a refresh is denied", async () => {
+        const wrapper = await renderWith();
+        expect(wrapper.find('[data-test="oncall-response-stats"]').exists()).toBe(true);
+        toastSpy.mockClear();
+
+        service.getResponse.mockRejectedValueOnce(DENIAL);
+        await wrapper.find('[data-test="oncall-response-refresh"]').trigger("click");
+        await flushPromises();
+
+        expectLocked(wrapper);
+        expect(toastSpy).not.toHaveBeenCalled();
+      });
+
+      /// The record can come from cache while a context read is the first to reach the server.
+      it.each([
+        "getTeam",
+        "listMembers",
+        "listTeams",
+        "priorCauses",
+        "responseHistory",
+        "responseReport",
+        "escalationProgress",
+        "listDeliveries",
+        "whoIsOnCall",
+        "getPolicy",
+        "teamReachability",
+        "resolvedSchedule",
+      ] as const)("replaces the body when only %s is denied", async (read) => {
+        queryClient.clear();
+        service[read].mockRejectedValueOnce(DENIAL);
+        const wrapper = await renderWith();
+
+        expectLocked(wrapper);
+        expect(toastSpy).not.toHaveBeenCalled();
+      });
+
+      it("leaves the page up when a context read fails for another reason", async () => {
+        queryClient.clear();
+        service.listDeliveries.mockRejectedValueOnce({ response: { status: 500, data: {} } });
+        const wrapper = await renderWith();
+
+        expect(wrapper.find('[data-test="oncall-response-stats"]').exists()).toBe(true);
+        expect(wrapper.findComponent(LicenseDeniedState).exists()).toBe(false);
+      });
+
+      /// The alert only decorates the page, and its route is not an on-call one.
+      it("leaves the page up when only the subject alert read is denied", async () => {
+        queryClient.clear();
+        alerts.get_by_alert_id.mockRejectedValueOnce(DENIAL);
+        const wrapper = await renderWith();
+
+        expect(wrapper.find('[data-test="oncall-response-stats"]').exists()).toBe(true);
+        expect(wrapper.findComponent(LicenseDeniedState).exists()).toBe(false);
+      });
+
+      it("stops reading once a context read is denied", async () => {
+        queryClient.clear();
+        service.getTeam.mockRejectedValueOnce(DENIAL);
+        await renderWith();
+
+        expect(service.listDeliveries).not.toHaveBeenCalled();
+        expect(service.whoIsOnCall).not.toHaveBeenCalled();
+      });
+
+      it("locks, with no error toast, when the re-read after a sent rung is denied", async () => {
+        queryClient.clear();
+        const wrapper = await renderWith();
+        const progress = { next_targets: [], next_at: null, exhausted: false };
+        (wrapper.vm as any).escalation = { ...progress, fired: [{ at: 1 }] };
+        await flushPromises();
+        toastSpy.mockClear();
+
+        service.getResponse.mockRejectedValueOnce(DENIAL);
+        (wrapper.vm as any).escalation = { ...progress, fired: [{ at: 2 }] };
+        await flushPromises();
+
+        expectLocked(wrapper);
+        expect(toastSpy).not.toHaveBeenCalled();
+      });
+
+      it("stops the hold's progress rechecks when one is denied", async () => {
+        vi.useFakeTimers();
+        try {
+          queryClient.clear();
+          service.escalationProgress.mockResolvedValue({
+            data: {
+              fired: [],
+              next_targets: [],
+              next_at: null,
+              exhausted: false,
+              held_until_micros: Date.now() * 1000 + 600_000_000,
+            },
+          } as any);
+          const wrapper = await renderWith();
+          service.escalationProgress.mockClear();
+          service.escalationProgress.mockRejectedValue(DENIAL);
+
+          await vi.advanceTimersByTimeAsync(60_000);
+
+          expectLocked(wrapper);
+          expect(service.escalationProgress).toHaveBeenCalledTimes(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
 
     it("says a deleted page no longer exists, and links to Pages", async () => {

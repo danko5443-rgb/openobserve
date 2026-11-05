@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
   >
     <template #actions>
       <ORefreshButton
-        v-if="loaded && !unavailable"
+        v-if="loaded && !unavailable && !licenseDenied"
         :last-run-at="lastFetchedAt"
         :loading="refreshing"
         data-test="oncall-mine-refresh"
@@ -71,6 +71,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       :title="t('oncall.notAvailableTitle')"
       :description="t('oncall.notAvailableDescription')"
       data-test="oncall-mine-unavailable"
+    />
+
+    <LicenseDeniedState
+      v-else-if="licenseDenied"
+      :features="licenseDenied"
+      data-test="oncall-mine-license-denied"
     />
 
     <OContent v-else y class="flex flex-col gap-5">
@@ -166,7 +172,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </OText>
       </div>
 
-      <OnCallMyDeliveries ref="deliveriesRef" :team-names="teamNames" />
+      <OnCallMyDeliveries
+        ref="deliveriesRef"
+        :team-names="teamNames"
+        @license-denied="licenseDenied = $event"
+      />
     </OContent>
   </OPageLayout>
 </template>
@@ -176,6 +186,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter, type RouteLocationRaw } from "vue-router";
 import { useStore } from "vuex";
 
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import OnCallMyDeliveries from "@/components/oncall/OnCallMyDeliveries.vue";
 import OnCallPhoneCard from "@/components/oncall/OnCallPhoneCard.vue";
 import OnCallSlackCard from "@/components/oncall/OnCallSlackCard.vue";
@@ -191,6 +202,7 @@ import { queryClient } from "@/composables/query/queryClient";
 import { myOnCallQuery } from "@/services/oncall.queries";
 import type { MyOnCall } from "@/ts/interfaces/oncall";
 import { raw, useI18nTyped, type I18nText } from "@/types/i18n";
+import { licenseDeniedFeatures } from "@/utils/featureGate";
 import { isOnCallUnavailable } from "@/utils/oncall";
 import { readSlackOrgConfig } from "@/utils/slackSettings";
 
@@ -203,6 +215,7 @@ const mine = ref<MyOnCall | null>(null);
 const loaded = ref(false);
 const lastFetchedAt = ref<number | null>(null);
 const unavailable = ref(false);
+const licenseDenied = ref<string[] | null>(null);
 /// Set only when the first load fails; a failed refresh keeps the teams on screen instead.
 const loadError = ref<string | null>(null);
 
@@ -247,6 +260,12 @@ async function fetchMine(force = false) {
     if (isOnCallUnavailable(err)) {
       unavailable.value = true;
       mine.value = null;
+      return;
+    }
+    // Ahead of the refresh rule below: a lock says why the teams went, so nobody reads it as off duty.
+    const denied = licenseDeniedFeatures(err);
+    if (denied) {
+      licenseDenied.value = denied;
       return;
     }
     // A failed refresh keeps what is on screen: blanking it would tell an on-call engineer they are off duty.

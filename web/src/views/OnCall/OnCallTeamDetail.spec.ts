@@ -16,6 +16,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import { queryClient } from "@/composables/query/queryClient";
 import i18n from "@/locales";
 import { toast } from "@/lib/feedback/Toast/useToast";
@@ -1357,6 +1358,63 @@ describe("OnCallTeamDetail", () => {
 
     expect(wrapper.find('[data-test="oncall-team-detail-error"]').exists()).toBe(true);
     expect(wrapper.findComponent({ name: "OnCallTeamAttention" }).exists()).toBe(false);
+  });
+
+  describe("a license denial", () => {
+    const DENIAL = {
+      response: {
+        status: 403,
+        data: {
+          code: 40001,
+          message: "Features not included in your license: oncall",
+          error_detail: "oncall",
+        },
+      },
+    };
+
+    function expectLocked(wrapper: ReturnType<typeof render>) {
+      const lock = wrapper.findComponent(LicenseDeniedState);
+      expect(lock.props("features")).toEqual(["oncall"]);
+      expect(lock.attributes("data-test")).toBe("oncall-team-detail-license-denied");
+      for (const gone of [
+        "oncall-team-detail-error",
+        "oncall-team-coverage",
+        "oncall-team-refresh",
+        "oncall-team-override-btn",
+        "oncall-team-detail-edit-btn",
+      ]) {
+        expect(wrapper.find(`[data-test="${gone}"]`).exists()).toBe(false);
+      }
+      expect(wrapper.findComponent({ name: "OnCallTeamAttention" }).exists()).toBe(false);
+    }
+
+    /// Reads are issued together and some may be answered from cache, so any one can carry the denial.
+    it.each([
+      "listTeams",
+      "getTeam",
+      "listMembers",
+      "getSchedule",
+      "getPolicy",
+      "whoIsOnCall",
+    ] as const)("replaces the body when %s is denied", async (read) => {
+      service[read].mockRejectedValueOnce(DENIAL);
+      const wrapper = render();
+      await flushPromises();
+
+      expectLocked(wrapper);
+    });
+
+    it("replaces a loaded team when a refresh is denied", async () => {
+      const wrapper = render();
+      await flushPromises();
+      expect(wrapper.find('[data-test="oncall-team-detail-edit-btn"]').exists()).toBe(true);
+
+      service.getTeam.mockRejectedValueOnce(DENIAL);
+      await wrapper.find('[data-test="oncall-team-refresh"]').trigger("click");
+      await flushPromises();
+
+      expectLocked(wrapper);
+    });
   });
 
   /// Deleting a team, then hitting the browser's Back button onto its now-gone

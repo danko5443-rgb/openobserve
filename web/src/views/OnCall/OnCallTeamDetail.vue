@@ -75,6 +75,12 @@
       />
     </OContent>
 
+    <LicenseDeniedState
+      v-else-if="licenseDenied"
+      :features="licenseDenied"
+      data-test="oncall-team-detail-license-denied"
+    />
+
     <OContent v-else-if="teamNotFound" y>
       <OEmptyState
         size="hero"
@@ -434,6 +440,7 @@ import OTabPanels from "@/lib/navigation/Tabs/OTabPanels.vue";
 import OTabPanel from "@/lib/navigation/Tabs/OTabPanel.vue";
 
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import LicenseDeniedState from "@/components/common/LicenseDeniedState.vue";
 import OnCallMembers from "@/components/oncall/OnCallMembers.vue";
 import OnCallOwnership from "@/components/oncall/OnCallOwnership.vue";
 import OnCallPolicyEditor from "@/components/oncall/OnCallPolicyEditor.vue";
@@ -515,6 +522,7 @@ import type {
 } from "@/ts/interfaces/oncall";
 import { MICROS_PER_DAY } from "@/ts/interfaces/oncall";
 import { raw, useI18nTyped } from "@/types/i18n";
+import { licenseDeniedFeatures } from "@/utils/featureGate";
 import {
   channelList,
   formatInZone,
@@ -636,6 +644,7 @@ const loaded = ref(false);
 const lastFetchedAt = ref<number | null>(null);
 const loadError = ref<string | null>(null);
 const oncallUnavailable = ref(false);
+const licenseDenied = ref<string[] | null>(null);
 const teamNotFound = ref(false);
 const editOpen = ref(false);
 
@@ -800,6 +809,7 @@ const refreshScheduleForEdit = () =>
 async function fetchAll(force = false) {
   loadError.value = null;
   teamNotFound.value = false;
+  licenseDenied.value = null;
   const org = orgId.value;
   const id = teamId.value;
 
@@ -813,6 +823,28 @@ async function fetchAll(force = false) {
       read<OnCallPolicy | null>(teamPolicyQuery(org, id), force),
       read<OnCallPosition[]>(whoIsOnCallQuery(org, id), force),
     ]);
+
+  // Any of the six can carry it, because the others may be answered from cache.
+  const denied = [
+    teamsSettled,
+    teamSettled,
+    memberSettled,
+    scheduleSettled,
+    policySettled,
+    onCallSettled,
+  ]
+    .map((settled) =>
+      settled.status === "rejected" ? licenseDeniedFeatures(settled.reason) : null,
+    )
+    .find((features) => features !== null);
+  if (denied) {
+    // The header reads these three, and its team facts and actions must not outlive the body.
+    team.value = null;
+    members.value = [];
+    loaded.value = false;
+    licenseDenied.value = denied;
+    return;
+  }
 
   // The org-level list exists in every on-call build regardless of this team id, so only its failure means the feature is unavailable.
   if (teamsSettled.status === "rejected") {

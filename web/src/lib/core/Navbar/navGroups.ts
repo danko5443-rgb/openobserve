@@ -282,6 +282,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
         name: "onCallMine",
         categoryKey: "menu.onCall",
         gate: "oncall",
+        feature: "oncall",
       },
       // Where external alerts (Grafana, Alertmanager, etc.) feed Incidents.
       // Gated on incidentList, not alertList: this only makes sense where
