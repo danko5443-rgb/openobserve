@@ -49,7 +49,7 @@ impl NewEmptyExec {
     pub fn new(
         name: &str,
         schema: SchemaRef,
-        projection: Option<&Vec<usize>>,
+        projection: Option<&[usize]>,
         filters: &[Expr],
         limit: Option<usize>,
         sort_order: FileSortOrder,
@@ -61,7 +61,7 @@ impl NewEmptyExec {
             schema,
             partitions: 1,
             cache,
-            projection: projection.cloned(),
+            projection: projection.map(<[usize]>::to_vec),
             filters: filters.to_owned(),
             limit,
             sort_order,
@@ -121,8 +121,8 @@ impl NewEmptyExec {
         &self.name
     }
 
-    pub fn projection(&self) -> Option<&Vec<usize>> {
-        self.projection.as_ref()
+    pub fn projection(&self) -> Option<&[usize]> {
+        self.projection.as_deref()
     }
 
     pub fn filters(&self) -> &[Expr] {
@@ -265,7 +265,7 @@ mod tests {
             full.clone(),
         );
         assert_eq!(exec.name(), "q");
-        assert_eq!(exec.projection(), Some(&projection));
+        assert_eq!(exec.projection(), Some(projection.as_slice()));
         assert_eq!(exec.limit(), Some(100));
         assert_eq!(exec.sort_order(), FileSortOrder::TimestampDesc);
         assert_eq!(exec.full_schema().fields().len(), full.fields().len());

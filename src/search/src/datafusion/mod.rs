@@ -30,6 +30,7 @@ pub mod storage;
 pub mod table_provider;
 pub mod udaf;
 pub mod udf;
+#[cfg(feature = "vortex")]
 pub mod vortex;
 
 #[derive(PartialEq, Debug)]
